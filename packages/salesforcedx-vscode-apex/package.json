@@ -14,20 +14,22 @@
     "color": "#ECECEC",
     "theme": "light"
   },
-  "version": "47.2.0",
+  "aiKey": "ec3632a4-df47-47a4-98dc-8134cacbaf7e",
+  "version": "51.3.0",
   "publisher": "salesforce",
   "license": "BSD-3-Clause",
   "engines": {
-    "vscode": "^1.32.0"
+    "vscode": "^1.49.3"
   },
   "categories": [
     "Programming Languages"
   ],
   "dependencies": {
-    "@salesforce/apex-tmlanguage": "1.2.0",
-    "@salesforce/core": "2.0.1",
-    "@salesforce/salesforcedx-sobjects-faux-generator": "47.2.0",
-    "@salesforce/salesforcedx-utils-vscode": "47.2.0",
+    "@salesforce/apex-node": "0.1.15",
+    "@salesforce/apex-tmlanguage": "1.4.0",
+    "@salesforce/core": "2.13.0",
+    "@salesforce/salesforcedx-utils-vscode": "51.3.0",
+    "@salesforce/source-deploy-retrieve": "1.1.17",
     "expand-home-dir": "0.0.3",
     "find-java-home": "0.2.0",
     "path-exists": "3.0.0",
@@ -36,24 +38,22 @@
     "vscode-languageclient": "5.1.1"
   },
   "devDependencies": {
-    "@salesforce/salesforcedx-test-utils-vscode": "47.2.0",
+    "@salesforce/salesforcedx-test-utils-vscode": "51.3.0",
     "@types/chai": "^4.0.0",
-    "@types/mocha": "2.2.38",
-    "@types/node": "8.9.3",
+    "@types/mkdirp": "0.5.2",
+    "@types/mocha": "^5",
+    "@types/node": "12.0.12",
     "@types/path-exists": "^1.0.29",
     "@types/shelljs": "^0.7.8",
     "@types/sinon": "^2.3.2",
+    "@types/vscode": "1.49.0",
     "chai": "^4.0.2",
     "cross-env": "5.2.0",
-    "mocha": "3.2.0",
-    "sinon": "^2.3.6",
-    "typescript": "3.1.6",
-    "vscode": "1.1.17",
+    "mocha": "^5",
+    "sinon": "^7.3.1",
+    "typescript": "3.8.3",
     "vscode-extension-telemetry": "0.0.17"
   },
-  "extensionDependencies": [
-    "salesforce.salesforcedx-vscode-core"
-  ],
   "scripts": {
     "vscode:prepublish": "npm prune --production",
     "vscode:package": "vsce package",
@@ -63,7 +63,6 @@
     "lint": "tslint --project .",
     "watch": "tsc -watch -p .",
     "clean": "shx rm -rf node_modules && cd out && node ../../../scripts/clean-all-but-jar.js && shx rm -rf coverage && shx rm -rf .nyc_output",
-    "postinstall": "node ./node_modules/vscode/bin/install",
     "test": "npm run test:vscode-integration",
     "test:vscode-integration": "node ../../scripts/run-vscode-integration-tests-with-top-level-extensions",
     "test:vscode-insiders-integration": "cross-env CODE_VERSION=insiders npm run test:vscode-integration"
@@ -126,6 +125,18 @@
       ],
       "commandPalette": [
         {
+          "command": "sfdx.force.apex.execute.selection",
+          "when": "sfdx:project_opened && editorHasSelection"
+        },
+        {
+          "command": "sfdx.force.apex.execute.document",
+          "when": "sfdx:project_opened && !editorHasSelection"
+        },
+        {
+          "command": "sfdx.force.apex.log.get",
+          "when": "sfdx:project_opened"
+        },
+        {
           "command": "sfdx.force.apex.test.last.class.run",
           "when": "sfdx:project_opened && sfdx:has_cached_test_class"
         },
@@ -142,12 +153,52 @@
           "when": "sfdx:project_opened && sfdx:has_cached_test_method"
         },
         {
-          "command": "sfdx.force.internal.refreshsobjects",
+          "command": "sfdx.force.apex.test.run",
           "when": "sfdx:project_opened"
+        },
+        {
+          "command": "sfdx.force.test.view.runClassTests",
+          "when": "false"
+        },
+        {
+          "command": "sfdx.force.test.view.runSingleTest",
+          "when": "false"
+        },
+        {
+          "command": "sfdx.force.test.view.goToDefinition",
+          "when": "false"
+        },
+        {
+          "command": "sfdx.force.test.view.showError",
+          "when": "false"
+        },
+        {
+          "command": "sfdx.force.test.view.run",
+          "when": "false"
+        },
+        {
+          "command": "sfdx.force.test.view.refresh",
+          "when": "false"
         }
       ]
     },
     "commands": [
+      {
+        "command": "sfdx.force.apex.execute.document",
+        "title": "%force_apex_execute_document_text%"
+      },
+      {
+        "command": "sfdx.force.apex.execute.selection",
+        "title": "%force_apex_execute_selection_text%"
+      },
+      {
+        "command": "sfdx.force.apex.log.get",
+        "title": "%force_apex_log_get_text%"
+      },
+      {
+        "command": "sfdx.force.apex.test.run",
+        "title": "%force_apex_test_run_text%"
+      },
       {
         "command": "sfdx.force.test.view.run",
         "title": "%run_tests_title%",
@@ -211,10 +262,6 @@
       {
         "command": "sfdx.force.apex.test.last.method.run",
         "title": "%force_apex_test_last_method_run_text%"
-      },
-      {
-        "command": "sfdx.force.internal.refreshsobjects",
-        "title": "%force_sobjects_refresh%"
       }
     ],
     "configuration": {
@@ -226,15 +273,19 @@
           "default": null,
           "description": "%java_home_description%"
         },
+        "salesforcedx-vscode-apex.java.memory": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "default": null,
+          "description": "%java_memory_description%"
+        },
         "salesforcedx-vscode-apex.enable-semantic-errors": {
           "type": "boolean",
           "default": false,
           "description": "%apex_semantic_errors_description%"
-        },
-        "salesforcedx-vscode-apex.enable-sobject-refresh-on-startup": {
-          "type": "boolean",
-          "default": false,
-          "description": "%enable_sobject_refresh_on_startup_description%"
         }
       }
     },
@@ -247,7 +298,8 @@
         ],
         "extensions": [
           ".cls",
-          ".trigger"
+          ".trigger",
+          ".soql"
         ],
         "configuration": "./syntaxes/apex.configuration.json"
       },

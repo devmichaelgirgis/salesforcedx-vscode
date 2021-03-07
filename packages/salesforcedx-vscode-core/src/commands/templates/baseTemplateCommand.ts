@@ -16,13 +16,32 @@ import * as vscode from 'vscode';
 import { channelService } from '../../channels';
 import { notificationService, ProgressNotification } from '../../notifications';
 import { taskViewService } from '../../statuses';
-import { getRootWorkspacePath, hasRootWorkspace } from '../../util';
-import { SelectOutputDir, SfdxCommandletExecutor } from '../util';
-import { SourcePathStrategy } from '../util';
+import {
+  getRootWorkspacePath,
+  hasRootWorkspace,
+  MetadataDictionary,
+  MetadataInfo
+} from '../../util';
+import {
+  SelectOutputDir,
+  SfdxCommandletExecutor,
+  SourcePathStrategy
+} from '../util';
 
 export abstract class BaseTemplateCommand extends SfdxCommandletExecutor<
   DirFileNameSelection
-> {
+  > {
+  private metadataType: MetadataInfo;
+
+  constructor(type: string) {
+    super();
+    const info = MetadataDictionary.getInfo(type);
+    if (!info) {
+      throw new Error(`Unrecognized metadata type ${type}`);
+    }
+    this.metadataType = info;
+  }
+
   public execute(response: ContinueResponse<DirFileNameSelection>): void {
     const startTime = process.hrtime();
     const cancellationTokenSource = new vscode.CancellationTokenSource();
@@ -36,11 +55,13 @@ export abstract class BaseTemplateCommand extends SfdxCommandletExecutor<
       this.logMetric(execution.command.logName, startTime, {
         dirType: this.identifyDirType(response.data.outputdir)
       });
-      if (data !== undefined && data.toString() === '0' && hasRootWorkspace()) {
+      if (data !== undefined && String(data) === '0' && hasRootWorkspace()) {
+        const outputFile = this.getPathToSource(response.data.outputdir, response.data.fileName);
         const document = await vscode.workspace.openTextDocument(
-          this.getPathToSource(response.data.outputdir, response.data.fileName)
+          outputFile
         );
         vscode.window.showTextDocument(document);
+        this.runPostCommandTasks(path.dirname(outputFile));
       }
     });
 
@@ -51,6 +72,12 @@ export abstract class BaseTemplateCommand extends SfdxCommandletExecutor<
     channelService.streamCommandOutput(execution);
     ProgressNotification.show(execution, cancellationTokenSource);
     taskViewService.addCommandExecution(execution, cancellationTokenSource);
+  }
+
+  protected runPostCommandTasks(targetDir: string) {
+    // By default do nothing
+    // This method is overridden in child classes to run any post command tasks
+    // Currently only Functions uses this to run "npm install"
   }
 
   private identifyDirType(outputDirectory: string): string {
@@ -65,16 +92,26 @@ export abstract class BaseTemplateCommand extends SfdxCommandletExecutor<
 
   private getPathToSource(outputDir: string, fileName: string): string {
     const sourceDirectory = path.join(getRootWorkspacePath(), outputDir);
-    return this.sourcePathStrategy.getPathToSource(
+    return this.getSourcePathStrategy().getPathToSource(
       sourceDirectory,
       fileName,
       this.getFileExtension()
     );
   }
 
-  protected abstract sourcePathStrategy: SourcePathStrategy;
+  public getSourcePathStrategy(): SourcePathStrategy {
+    return this.metadataType.pathStrategy;
+  }
 
-  protected abstract getFileExtension(): string;
+  public getFileExtension(): string {
+    return `.${this.metadataType.suffix}`;
+  }
 
-  protected abstract getDefaultDirectory(): string;
+  public setFileExtension(extension: string): void {
+    this.metadataType.suffix = extension;
+  }
+
+  public getDefaultDirectory(): string {
+    return this.metadataType.directory;
+  }
 }

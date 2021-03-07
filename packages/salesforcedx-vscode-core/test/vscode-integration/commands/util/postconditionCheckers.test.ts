@@ -6,29 +6,33 @@
  */
 import {
   ContinueResponse,
-  DirFileNameSelection,
   LocalComponent
 } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
 import { expect } from 'chai';
 import * as fs from 'fs';
-import { join } from 'path';
-import { sandbox, SinonStub } from 'sinon';
-import { Uri, workspace } from 'vscode';
+import { join, normalize } from 'path';
+import { createSandbox, SinonSandbox, SinonStub } from 'sinon';
+import { channelService } from '../../../../src/channels';
 import {
+  ConflictDetectionChecker,
+  ConflictDetectionMessages,
   EmptyPostChecker,
-  FilePathExistsChecker,
-  GlobStrategy,
   OverwriteComponentPrompt,
   PathStrategyFactory
 } from '../../../../src/commands/util';
+import {
+  conflictDetector,
+  conflictView,
+  DirectoryDiffResults
+} from '../../../../src/conflict';
 import { nls } from '../../../../src/messages';
 import { notificationService } from '../../../../src/notifications';
-import { getRootWorkspacePath } from '../../../../src/util';
-import { MetadataDictionary } from '../../../../src/util/metadataDictionary';
-
-const env = sandbox.create();
+import { sfdxCoreSettings } from '../../../../src/settings';
+import { SfdxPackageDirectories } from '../../../../src/sfdxProject';
+import { getRootWorkspacePath, MetadataDictionary } from '../../../../src/util';
 
 describe('Postcondition Checkers', () => {
+  let env: SinonSandbox;
   describe('EmptyPostconditionChecker', () => {
     it('Should return CancelResponse if input passed in is CancelResponse', async () => {
       const postChecker = new EmptyPostChecker();
@@ -52,63 +56,6 @@ describe('Postcondition Checkers', () => {
     });
   });
 
-  describe('FilePathExistsChecker', () => {
-    let findFilesStub: SinonStub;
-    let checker: FilePathExistsChecker;
-    let warningStub: SinonStub;
-    const testUri = Uri.file('/test/path');
-    const testInput: ContinueResponse<DirFileNameSelection> = {
-      type: 'CONTINUE',
-      data: { outputdir: 'test', fileName: 'test' }
-    };
-
-    beforeEach(() => {
-      findFilesStub = env.stub(workspace, 'findFiles');
-      warningStub = env.stub(notificationService, 'showWarningMessage');
-      checker = new FilePathExistsChecker(
-        new TestGlobStrategy(),
-        'testMessage'
-      );
-    });
-
-    afterEach(() => env.restore());
-
-    it('Should find files based on glob strategy', async () => {
-      findFilesStub.returns([]);
-      await checker.check(testInput);
-      expect(findFilesStub.firstCall.args).to.eql(TestGlobStrategy.testGlobs);
-    });
-
-    it('Should prompt overwrite message with correct message', async () => {
-      findFilesStub.returns([testUri]);
-      warningStub.returns(nls.localize('warning_prompt_overwrite_cancel'));
-      await checker.check(testInput);
-      expect(warningStub.firstCall.args[0]).to.equal('testMessage');
-    });
-
-    it('Should return ContinueResponse if there are no existing files', async () => {
-      findFilesStub.returns([]);
-      const response = await checker.check(testInput);
-      expect(response.type).to.equal('CONTINUE');
-    });
-
-    it('Should prompt overwrite message and return ContinueResponse if accepted', async () => {
-      findFilesStub.returns([testUri]);
-      warningStub.returns(nls.localize('warning_prompt_continue_confirm'));
-      const response = await checker.check(testInput);
-      expect(warningStub.calledOnce).to.equal(true);
-      expect(response.type).to.equal('CONTINUE');
-    });
-
-    it('Should prompt overwrite message and return CancelResponse if cancelled', async () => {
-      findFilesStub.returns([testUri]);
-      warningStub.returns(nls.localize('warning_prompt_overwrite_cancel'));
-      const response = await checker.check(testInput);
-      expect(warningStub.calledOnce).to.equal(true);
-      expect(response.type).to.equal('CANCEL');
-    });
-  });
-
   describe('OverwriteComponentPrompt', () => {
     let existsStub: SinonStub;
     let modalStub: SinonStub;
@@ -116,6 +63,7 @@ describe('Postcondition Checkers', () => {
     const checker = new OverwriteComponentPrompt();
 
     beforeEach(() => {
+      env = createSandbox();
       existsStub = env.stub(fs, 'existsSync');
       modalStub = env.stub(notificationService, 'showWarningModal');
     });
@@ -123,7 +71,9 @@ describe('Postcondition Checkers', () => {
     afterEach(() => env.restore());
 
     describe('Check Components Exist', () => {
-      beforeEach(() => (promptStub = env.stub(checker, 'promptOverwrite')));
+      beforeEach(() => {
+        promptStub = env.stub(checker, 'promptOverwrite');
+      });
 
       it('Should not prompt overwrite if components do not exist', async () => {
         existsStub.returns(true);
@@ -342,11 +292,198 @@ describe('Postcondition Checkers', () => {
       existsStub.withArgs(path).returns(value);
     }
   });
-});
 
-class TestGlobStrategy implements GlobStrategy {
-  public static readonly testGlobs = ['{/test,/glob}'];
-  public async globs() {
-    return TestGlobStrategy.testGlobs;
-  }
-}
+  describe('ConflictDetectionChecker', () => {
+    let modalStub: SinonStub;
+    let settingsStub: SinonStub;
+    let detectorStub: SinonStub;
+    let detectorCleanupStub: SinonStub;
+    let conflictViewStub: SinonStub;
+    let appendLineStub: SinonStub;
+    let channelOutput: string[] = [];
+
+    beforeEach(() => {
+      env = createSandbox();
+      channelOutput = [];
+      modalStub = env.stub(notificationService, 'showWarningModal');
+      settingsStub = env.stub(sfdxCoreSettings, 'getConflictDetectionEnabled');
+      detectorStub = env.stub(conflictDetector, 'checkForConflicts');
+      detectorCleanupStub = env.stub(conflictDetector, 'clearCache');
+      conflictViewStub = env.stub(conflictView, 'visualizeDifferences');
+      appendLineStub = env.stub(channelService, 'appendLine');
+      appendLineStub.callsFake(line => channelOutput.push(line));
+    });
+
+    afterEach(() => env.restore());
+
+    const emptyMessages: ConflictDetectionMessages = {
+      warningMessageKey: '',
+      commandHint: i => i
+    };
+
+    const retrieveMessages: ConflictDetectionMessages = {
+      warningMessageKey: 'conflict_detect_conflicts_during_retrieve',
+      commandHint: i => i
+    };
+
+    const validInput: ContinueResponse<string> = {
+      type: 'CONTINUE',
+      data: 'package.xml'
+    };
+
+    it('Should return CancelResponse if input passed in is CancelResponse', async () => {
+      const postChecker = new ConflictDetectionChecker(emptyMessages);
+      const response = await postChecker.check({ type: 'CANCEL' });
+      expect(response.type).to.equal('CANCEL');
+    });
+
+    it('Should return ContinueResponse unchanged if input is ContinueResponse & conflict detection is disabled', async () => {
+      const postChecker = new ConflictDetectionChecker(emptyMessages);
+
+      settingsStub.returns(false);
+      const response = await postChecker.check(validInput);
+
+      expect(response.type).to.equal('CONTINUE');
+      if (response.type === 'CONTINUE') {
+        expect(response.data).to.equal('package.xml');
+      } else {
+        expect.fail('Response should be of type ContinueResponse');
+      }
+    });
+
+    it('Should return CancelResponse when a username is not defined.', async () => {
+      const postChecker = new ConflictDetectionChecker(emptyMessages);
+      const usernameStub = env
+        .stub(postChecker, 'getDefaultUsernameOrAlias')
+        .returns(undefined);
+      settingsStub.returns(true);
+
+      const response = await postChecker.check(validInput);
+      expect(response.type).to.equal('CANCEL');
+      expect(usernameStub.calledOnce).to.equal(true);
+    });
+
+    it('Should return CancelResponse when a default package directory is not defined.', async () => {
+      const postChecker = new ConflictDetectionChecker(emptyMessages);
+      const usernameStub = env
+        .stub(postChecker, 'getDefaultUsernameOrAlias')
+        .returns('MyAlias');
+      const packageDirStub = env
+        .stub(SfdxPackageDirectories, 'getDefaultPackageDir')
+        .returns(undefined);
+      settingsStub.returns(true);
+
+      const response = await postChecker.check(validInput);
+      expect(response.type).to.equal('CANCEL');
+      expect(usernameStub.calledOnce).to.equal(true);
+      expect(packageDirStub.calledOnce).to.equal(true);
+    });
+
+    it('Should return ContinueResponse when no conflicts are detected', async () => {
+      const postChecker = new ConflictDetectionChecker(emptyMessages);
+      const response = await postChecker.handleConflicts(
+        'manifest.xml',
+        'admin@example.com',
+        'hub-app',
+        { different: new Set<string>() } as DirectoryDiffResults
+      );
+
+      expect(response.type).to.equal('CONTINUE');
+      expect((response as ContinueResponse<string>).data).to.equal(
+        'manifest.xml'
+      );
+      expect(appendLineStub.notCalled).to.equal(true);
+
+      expect(detectorCleanupStub.firstCall.args).to.eql(['admin@example.com']);
+    });
+
+    it('Should post a warning and return CancelResponse when conflicts are detected and cancelled', async () => {
+      const postChecker = new ConflictDetectionChecker(retrieveMessages);
+      const results = {
+        different: new Set<string>([
+          'main/default/objects/Property__c/fields/Broker__c.field-meta.xml',
+          'main/default/aura/auraPropertySummary/auraPropertySummaryController.js'
+        ]),
+        scannedLocal: 4,
+        scannedRemote: 6
+      } as DirectoryDiffResults;
+      modalStub.returns('Cancel');
+
+      const response = await postChecker.handleConflicts(
+        'package.xml',
+        'admin@example.com',
+        'force-app',
+        results
+      );
+      expect(response.type).to.equal('CANCEL');
+
+      expect(modalStub.firstCall.args.slice(1)).to.eql([
+        nls.localize('conflict_detect_override'),
+        nls.localize('conflict_detect_show_conflicts')
+      ]);
+
+      expect(channelOutput).to.include.members([
+        nls.localize('conflict_detect_conflict_header', 2, 6, 4),
+        normalize(
+          'force-app/main/default/objects/Property__c/fields/Broker__c.field-meta.xml'
+        ),
+        normalize(
+          'force-app/main/default/aura/auraPropertySummary/auraPropertySummaryController.js'
+        ),
+        nls.localize('conflict_detect_command_hint', 'package.xml')
+      ]);
+
+      expect(conflictViewStub.calledOnce).to.equal(true);
+
+      expect(detectorCleanupStub.calledOnce).to.equal(false);
+    });
+
+    it('Should post a warning and return ContinueResponse when conflicts are detected and overwritten', async () => {
+      const postChecker = new ConflictDetectionChecker(retrieveMessages);
+      const results = {
+        different: new Set<string>('MyClass.cls')
+      } as DirectoryDiffResults;
+      modalStub.returns(nls.localize('conflict_detect_override'));
+
+      const response = await postChecker.handleConflicts(
+        'manifest.xml',
+        'admin@example.com',
+        'hub-app',
+        results
+      );
+      expect(response.type).to.equal('CONTINUE');
+
+      expect(modalStub.firstCall.args.slice(1)).to.eql([
+        nls.localize('conflict_detect_override'),
+        nls.localize('conflict_detect_show_conflicts')
+      ]);
+
+      expect(detectorCleanupStub.firstCall.args).to.eql(['admin@example.com']);
+    });
+
+    it('Should post a warning and return CancelResponse when conflicts are detected and conflicts are shown', async () => {
+      const postChecker = new ConflictDetectionChecker(retrieveMessages);
+      const results = {
+        different: new Set<string>('MyClass.cls')
+      } as DirectoryDiffResults;
+      modalStub.returns(nls.localize('conflict_detect_show_conflicts'));
+
+      const response = await postChecker.handleConflicts(
+        'manifest.xml',
+        'admin@example.com',
+        'hub-app',
+        results
+      );
+      expect(response.type).to.equal('CANCEL');
+
+      expect(modalStub.firstCall.args.slice(1)).to.eql([
+        nls.localize('conflict_detect_override'),
+        nls.localize('conflict_detect_show_conflicts')
+      ]);
+
+      expect(conflictViewStub.calledOnce).to.equal(true);
+
+      expect(detectorCleanupStub.calledOnce).to.equal(false);
+    });
+  });
+});

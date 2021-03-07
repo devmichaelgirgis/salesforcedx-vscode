@@ -11,10 +11,11 @@ import { expect } from 'chai';
 import * as path from 'path';
 import * as shell from 'shelljs';
 import { workspace } from 'vscode';
-import { JAVA_HOME_KEY } from '../../src/requirements';
+import { JAVA_HOME_KEY, JAVA_MEMORY_KEY } from '../../src/requirements';
 
 describe('Java Requirements Test', () => {
   it('The jar should be signed', () => {
+    shell.config.execPath = process.execPath;
     const apexJarPath = path.join(__dirname, '..', '..', 'apex-jorje-lsp.jar');
     expect(
       shell
@@ -26,5 +27,10 @@ describe('Java Requirements Test', () => {
   it('Should have java.home section', () => {
     const config = workspace.getConfiguration();
     expect(config.has(JAVA_HOME_KEY)).to.be.true;
+  });
+
+  it('Should have java.memory section', () => {
+    const config = workspace.getConfiguration();
+    expect(config.has(JAVA_MEMORY_KEY)).to.be.true;
   });
 });

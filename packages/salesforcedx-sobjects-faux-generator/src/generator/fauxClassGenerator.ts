@@ -4,8 +4,7 @@
  * Licensed under the BSD 3-Clause license.
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
-import { SFDX_PROJECT_FILE } from '@salesforce/salesforcedx-utils-vscode/out/src';
-import { LocalCommandExecution } from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
+import { AuthInfo, Connection } from '@salesforce/core';
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import { EOL } from 'os';
@@ -13,27 +12,58 @@ import * as path from 'path';
 import { mkdir, rm } from 'shelljs';
 import {
   CUSTOMOBJECTS_DIR,
+  ERROR_EVENT,
+  EXIT_EVENT,
+  FAILURE_CODE,
   SFDX_DIR,
+  SFDX_PROJECT_FILE,
   SOBJECTS_DIR,
   STANDARDOBJECTS_DIR,
+  STDERR_EVENT,
+  STDOUT_EVENT,
+  SUCCESS_CODE,
   TOOLS_DIR
 } from '../constants';
+import { SObjectDescribe } from '../describe';
+import { nls } from '../messages';
 import {
   ChildRelationship,
   Field,
   SObject,
   SObjectCategory,
-  SObjectDescribe
-} from '../describe';
-import { nls } from '../messages';
+  SObjectRefreshSource
+} from '../types';
+import { ConfigUtil } from './configUtil';
 
+export const INDENT = '    ';
+const MODIFIER = 'global';
+const startupMinSObjects = [
+  'Account',
+  'Attachment',
+  'Case',
+  'Contact',
+  'Contract',
+  'Lead',
+  'Note',
+  'Opportunity',
+  'Order',
+  'Pricebook2',
+  'PricebookEntry',
+  'Product2',
+  'RecordType',
+  'Report',
+  'Task',
+  'User'
+];
 export interface CancellationToken {
   isCancellationRequested: boolean;
 }
 
-export enum SObjectRefreshSource {
-  Manual = 'manual',
-  Startup = 'startup'
+export interface FieldDeclaration {
+  modifier: string;
+  type: string;
+  name: string;
+  comment?: string;
 }
 
 export interface SObjectRefreshResult {
@@ -81,8 +111,21 @@ export class FauxClassGenerator {
     ['complexvalue', 'Object']
   ]);
 
-  private static fieldName(decl: string): string {
-    return decl.substr(decl.indexOf(' ') + 1);
+  private static fieldDeclToString(decl: FieldDeclaration): string {
+    return `${FauxClassGenerator.commentToString(decl.comment)}${INDENT}${
+      decl.modifier
+    } ${decl.type} ${decl.name};`;
+  }
+
+  // VisibleForTesting
+  public static commentToString(comment?: string): string {
+    // for some reasons if the comment is on a single line the help context shows the last '*/'
+    return comment
+      ? `${INDENT}/* ${comment.replace(
+          /(\/\*+\/)|(\/\*+)|(\*+\/)/g,
+          ''
+        )}${EOL}${INDENT}*/${EOL}`
+      : '';
   }
 
   private emitter: EventEmitter;
@@ -97,10 +140,10 @@ export class FauxClassGenerator {
 
   public async generate(
     projectPath: string,
-    type: SObjectCategory,
+    category: SObjectCategory,
     source: SObjectRefreshSource
   ): Promise<SObjectRefreshResult> {
-    this.result = { data: { category: type, source, cancelled: false } };
+    this.result = { data: { category, source, cancelled: false } };
     const sobjectsFolderPath = path.join(
       projectPath,
       SFDX_DIR,
@@ -124,15 +167,18 @@ export class FauxClassGenerator {
         nls.localize('no_generate_if_not_in_project', sobjectsFolderPath)
       );
     }
-    this.cleanupSObjectFolders(sobjectsFolderPath, type);
+    this.cleanupSObjectFolders(sobjectsFolderPath, category);
 
-    const describe = new SObjectDescribe();
-    const standardSObjects: SObject[] = [];
-    const customSObjects: SObject[] = [];
-    let fetchedSObjects: SObject[] = [];
+    const connection = await Connection.create({
+      authInfo: await AuthInfo.create({
+        username: await ConfigUtil.getUsername(projectPath)
+      })
+    });
+    const describe = new SObjectDescribe(connection);
+
     let sobjects: string[] = [];
     try {
-      sobjects = await describe.describeGlobal(projectPath, type);
+      sobjects = await describe.describeGlobal(category, source);
     } catch (e) {
       const err = JSON.parse(e);
       return this.errorExit(
@@ -140,26 +186,25 @@ export class FauxClassGenerator {
         err.stack
       );
     }
-    let j = 0;
-    while (j < sobjects.length) {
-      try {
-        if (
-          this.cancellationToken &&
-          this.cancellationToken.isCancellationRequested
-        ) {
-          return this.cancelExit();
-        }
-        fetchedSObjects = fetchedSObjects.concat(
-          await describe.describeSObjectBatch(projectPath, sobjects, j)
-        );
-        j = fetchedSObjects.length;
-      } catch (errorMessage) {
-        return this.errorExit(
-          nls.localize('failure_in_sobject_describe_text', errorMessage)
-        );
-      }
+
+    if (
+      this.cancellationToken &&
+      this.cancellationToken.isCancellationRequested
+    ) {
+      return this.cancelExit();
     }
 
+    let fetchedSObjects: SObject[] = [];
+    try {
+      fetchedSObjects = await describe.fetchObjects(sobjects);
+    } catch (errorMessage) {
+      return this.errorExit(
+        nls.localize('failure_in_sobject_describe_text', errorMessage)
+      );
+    }
+
+    const standardSObjects: SObject[] = [];
+    const customSObjects: SObject[] = [];
     // tslint:disable-next-line:prefer-for-of
     for (let i = 0; i < fetchedSObjects.length; i++) {
       if (fetchedSObjects[i].custom) {
@@ -189,9 +234,82 @@ export class FauxClassGenerator {
     return this.successExit();
   }
 
+  public async generateMin(
+    projectPath: string,
+    source: SObjectRefreshSource
+  ): Promise<SObjectRefreshResult> {
+    this.result = {
+      data: { category: SObjectCategory.STANDARD, source, cancelled: false }
+    };
+    const sobjectsFolderPath = path.join(
+      projectPath,
+      SFDX_DIR,
+      TOOLS_DIR,
+      SOBJECTS_DIR
+    );
+    const standardSObjectsFolderPath = path.join(
+      sobjectsFolderPath,
+      STANDARDOBJECTS_DIR
+    );
+
+    if (
+      !fs.existsSync(projectPath) ||
+      !fs.existsSync(path.join(projectPath, SFDX_PROJECT_FILE))
+    ) {
+      return this.errorExit(
+        nls.localize('no_generate_if_not_in_project', sobjectsFolderPath)
+      );
+    }
+    this.cleanupSObjectFolders(sobjectsFolderPath, SObjectCategory.STANDARD);
+
+    const connection = await Connection.create({
+      authInfo: await AuthInfo.create({
+        username: await ConfigUtil.getUsername(projectPath)
+      })
+    });
+    const describe = new SObjectDescribe(connection);
+
+    if (
+      this.cancellationToken &&
+      this.cancellationToken.isCancellationRequested
+    ) {
+      return this.cancelExit();
+    }
+
+    let fetchedSObjects: SObject[] = [];
+    try {
+      fetchedSObjects = await describe.fetchObjects(startupMinSObjects);
+    } catch (errorMessage) {
+      return this.errorExit(
+        nls.localize('failure_in_sobject_describe_text', errorMessage)
+      );
+    }
+
+    const standardSObjects: SObject[] = [];
+    // tslint:disable-next-line:prefer-for-of
+    for (let i = 0; i < fetchedSObjects.length; i++) {
+      standardSObjects.push(fetchedSObjects[i]);
+    }
+
+    this.result.data.standardObjects = standardSObjects.length;
+    this.result.data.customObjects = 0;
+
+    this.logFetchedObjects(standardSObjects, []);
+
+    try {
+      this.generateFauxClasses(standardSObjects, standardSObjectsFolderPath);
+    } catch (errorMessage) {
+      return this.errorExit(errorMessage);
+    }
+
+    return this.successExit();
+  }
+
   // VisibleForTesting
   public generateFauxClassText(sobject: SObject): string {
-    const declarations: string[] = this.generateFauxClassDecls(sobject);
+    const declarations: FieldDeclaration[] = this.generateFauxClassDecls(
+      sobject
+    );
     return this.generateFauxClassTextFromDecls(sobject.name, declarations);
   }
 
@@ -210,10 +328,10 @@ export class FauxClassGenerator {
   // VisibleForTesting
   public cleanupSObjectFolders(
     baseSObjectsFolder: string,
-    type: SObjectCategory
+    category: SObjectCategory
   ) {
     let pathToClean;
-    switch (type) {
+    switch (category) {
       case SObjectCategory.STANDARD:
         pathToClean = path.join(baseSObjectsFolder, STANDARDOBJECTS_DIR);
         break;
@@ -232,29 +350,20 @@ export class FauxClassGenerator {
     message: string,
     stack?: string
   ): Promise<SObjectRefreshResult> {
-    this.emitter.emit(LocalCommandExecution.STDERR_EVENT, `${message}\n`);
-    this.emitter.emit(LocalCommandExecution.ERROR_EVENT, new Error(message));
-    this.emitter.emit(
-      LocalCommandExecution.EXIT_EVENT,
-      LocalCommandExecution.FAILURE_CODE
-    );
+    this.emitter.emit(STDERR_EVENT, `${message}\n`);
+    this.emitter.emit(ERROR_EVENT, new Error(message));
+    this.emitter.emit(EXIT_EVENT, FAILURE_CODE);
     this.result.error = { message, stack };
     return Promise.reject(this.result);
   }
 
   private successExit(): Promise<SObjectRefreshResult> {
-    this.emitter.emit(
-      LocalCommandExecution.EXIT_EVENT,
-      LocalCommandExecution.SUCCESS_CODE
-    );
+    this.emitter.emit(EXIT_EVENT, SUCCESS_CODE);
     return Promise.resolve(this.result);
   }
 
   private cancelExit(): Promise<SObjectRefreshResult> {
-    this.emitter.emit(
-      LocalCommandExecution.EXIT_EVENT,
-      LocalCommandExecution.FAILURE_CODE
-    );
+    this.emitter.emit(EXIT_EVENT, FAILURE_CODE);
     this.result.data.cancelled = true;
     return Promise.resolve(this.result);
   }
@@ -280,13 +389,18 @@ export class FauxClassGenerator {
     return relationshipName ? relationshipName : this.stripId(name);
   }
 
-  private generateChildRelationship(rel: ChildRelationship): string {
-    const nameToUse = this.getReferenceName(rel.relationshipName, rel.field);
-    return `List<${rel.childSObject}> ${nameToUse}`;
+  private generateChildRelationship(rel: ChildRelationship): FieldDeclaration {
+    const name = this.getReferenceName(rel.relationshipName, rel.field);
+    return {
+      modifier: MODIFIER,
+      type: `List<${rel.childSObject}>`,
+      name
+    };
   }
 
-  private generateField(field: Field): string[] {
-    const decls: string[] = [];
+  private generateField(field: Field): FieldDeclaration[] {
+    const decls: FieldDeclaration[] = [];
+    const comment = field.inlineHelpText;
     let genType = '';
     if (field.referenceTo.length === 0) {
       // should be a normal field EXCEPT for external lookup & metadata relationship
@@ -296,19 +410,29 @@ export class FauxClassGenerator {
       } else {
         genType = this.getTargetType(field.type);
       }
-      decls.push(`${genType} ${field.name}`);
+
+      decls.push({
+        modifier: MODIFIER,
+        type: genType,
+        name: field.name,
+        comment
+      });
     } else {
-      const nameToUse = this.getReferenceName(
-        field.relationshipName,
-        field.name
-      );
-      if (field.referenceTo.length > 1) {
-        decls.push(`SObject ${nameToUse}`);
-      } else {
-        decls.push(`${field.referenceTo} ${nameToUse}`);
-      }
+      const name = this.getReferenceName(field.relationshipName, field.name);
+
+      decls.push({
+        modifier: MODIFIER,
+        name,
+        type: field.referenceTo.length > 1 ? 'SObject' : `${field.referenceTo}`,
+        comment
+      });
       // field.type will be "reference", but the actual type is an Id for Apex
-      decls.push(`Id ${field.name}`);
+      decls.push({
+        modifier: MODIFIER,
+        name: field.name,
+        type: 'Id',
+        comment
+      });
     }
     return decls;
   }
@@ -324,11 +448,11 @@ export class FauxClassGenerator {
     }
   }
 
-  private generateFauxClassDecls(sobject: SObject): string[] {
-    const declarations: string[] = [];
+  private generateFauxClassDecls(sobject: SObject): FieldDeclaration[] {
+    const declarations: FieldDeclaration[] = [];
     if (sobject.fields) {
       for (const field of sobject.fields) {
-        const decls: string[] = this.generateField(field);
+        const decls: FieldDeclaration[] = this.generateField(field);
         if (decls && decls.length > 0) {
           for (const decl of decls) {
             declarations.push(decl);
@@ -340,7 +464,7 @@ export class FauxClassGenerator {
     if (sobject.childRelationships) {
       for (const rel of sobject.childRelationships) {
         if (rel.relationshipName) {
-          const decl: string = this.generateChildRelationship(rel);
+          const decl: FieldDeclaration = this.generateChildRelationship(rel);
           if (decl) {
             declarations.push(decl);
           }
@@ -349,7 +473,7 @@ export class FauxClassGenerator {
       for (const rel of sobject.childRelationships) {
         // handle the odd childRelationships last (without relationshipName)
         if (!rel.relationshipName) {
-          const decl: string = this.generateChildRelationship(rel);
+          const decl: FieldDeclaration = this.generateChildRelationship(rel);
           if (decl) {
             declarations.push(decl);
           }
@@ -361,37 +485,27 @@ export class FauxClassGenerator {
 
   private generateFauxClassTextFromDecls(
     className: string,
-    declarations: string[]
+    declarations: FieldDeclaration[]
   ): string {
     // sort, but filter out duplicates
     // which can happen due to childRelationships w/o a relationshipName
-    declarations.sort(
-      (first: string, second: string): number => {
-        return FauxClassGenerator.fieldName(first) >
-          FauxClassGenerator.fieldName(second)
-          ? 1
-          : -1;
-      }
-    );
+    declarations.sort((first, second): number => {
+      return first.name || first.type > second.name || second.type ? 1 : -1;
+    });
 
-    declarations = declarations.filter(
-      (value: string, index: number, array: string[]): boolean => {
-        return (
-          !index ||
-          FauxClassGenerator.fieldName(value) !==
-            FauxClassGenerator.fieldName(array[index - 1])
-        );
-      }
-    );
+    declarations = declarations.filter((value, index, array): boolean => {
+      return !index || value.name !== array[index - 1].name;
+    });
 
-    const indentAndModifier = '    global ';
-    const classDeclaration = `global class ${className} {${EOL}`;
-    const declarationLines = declarations.join(`;${EOL}${indentAndModifier}`);
-    const classConstructor = `${indentAndModifier}${className} () ${EOL}    {${EOL}    }${EOL}`;
+    const classDeclaration = `${MODIFIER} class ${className} {${EOL}`;
+    const declarationLines = declarations
+      .map(FauxClassGenerator.fieldDeclToString)
+      .join(`${EOL}`);
+    const classConstructor = `${INDENT}${MODIFIER} ${className} () ${EOL}    {${EOL}    }${EOL}`;
 
     const generatedClass = `${nls.localize(
       'class_header_generated_comment'
-    )}${classDeclaration}${indentAndModifier}${declarationLines};${EOL}${EOL}${classConstructor}}`;
+    )}${classDeclaration}${declarationLines}${EOL}${EOL}${classConstructor}}`;
 
     return generatedClass;
   }
@@ -407,7 +521,7 @@ export class FauxClassGenerator {
   private logSObjects(sobjectKind: string, fetchedLength: number) {
     if (fetchedLength > 0) {
       this.emitter.emit(
-        LocalCommandExecution.STDOUT_EVENT,
+        STDOUT_EVENT,
         nls.localize('fetched_sobjects_length_text', fetchedLength, sobjectKind)
       );
     }

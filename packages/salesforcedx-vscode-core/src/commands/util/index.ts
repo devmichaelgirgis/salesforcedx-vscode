@@ -8,11 +8,7 @@ export {
   SourcePathStrategy,
   PathStrategyFactory
 } from './sourcePathStrategies';
-export { GlobStrategy, GlobStrategyFactory } from './globStrategies';
-export {
-  FilePathExistsChecker,
-  OverwriteComponentPrompt
-} from './postconditionCheckers';
+export { OverwriteComponentPrompt } from './postconditionCheckers';
 export {
   SimpleGatherer,
   EmptyParametersGatherer,
@@ -21,11 +17,17 @@ export {
   FileSelection,
   FileSelector,
   FilePathGatherer,
+  MetadataTypeGatherer,
+  PromptConfirmGatherer,
   SelectOutputDir,
   SelectFileName,
   SelectUsername
 } from './parameterGatherers';
-export { EmptyPostChecker } from './postconditionCheckers';
+export {
+  ConflictDetectionChecker,
+  ConflictDetectionMessages,
+  EmptyPostChecker
+} from './postconditionCheckers';
 export {
   SfdxCommandlet,
   SfdxCommandletExecutor,
@@ -38,3 +40,8 @@ export {
   DevUsernameChecker,
   EmptyPreChecker
 } from './preconditionCheckers';
+export {
+  createComponentCount,
+  useBetaDeployRetrieve
+} from './betaDeployRetrieve';
+export { createDeployOutput, createRetrieveOutput } from './sourceResultOutput';

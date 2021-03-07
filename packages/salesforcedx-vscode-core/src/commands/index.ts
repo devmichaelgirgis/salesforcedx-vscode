@@ -4,26 +4,72 @@
  * Licensed under the BSD 3-Clause license.
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
-export { forceApexExecute } from './forceApexExecute';
-export { forceAuthWebLogin } from './forceAuthWebLogin';
-export { forceAuthDevHub } from './forceAuthDevHub';
-export { forceApexTestRun } from './forceApexTestRun';
+export {
+  forceAuthWebLogin,
+  AuthParams,
+  AuthParamsGatherer,
+  createAuthWebLoginExecutor,
+  DEFAULT_ALIAS,
+  ForceAuthWebLoginDemoModeExecutor,
+  ForceAuthWebLoginExecutor,
+  OrgTypeItem,
+  PRODUCTION_URL,
+  SANDBOX_URL
+} from './forceAuthWebLogin';
+export {
+  forceAuthDevHub,
+  createAuthDevHubExecutor,
+  ForceAuthDevHubDemoModeExecutor,
+  ForceAuthDevHubExecutor
+} from './forceAuthDevHub';
 export { forceDataSoqlQuery } from './forceDataSoqlQuery';
-export { forceOrgCreate } from './forceOrgCreate';
-export { forceOrgOpen } from './forceOrgOpen';
-export { forceSourceDelete } from './forceSourceDelete';
-export { forceSourceDeployManifest } from './forceSourceDeployManifest';
+export {
+  forceOrgCreate,
+  AliasGatherer,
+  ForceOrgCreateExecutor
+} from './forceOrgCreate';
+export {
+  forceOrgOpen,
+  ForceOrgOpenContainerExecutor,
+  ForceOrgOpenExecutor,
+  getExecutor
+} from './forceOrgOpen';
+export {
+  forceSourceDelete,
+  ConfirmationAndSourcePathGatherer,
+  ForceSourceDeleteExecutor,
+  ManifestChecker
+} from './forceSourceDelete';
+export {
+  forceSourceDeployManifest,
+  ForceSourceDeployManifestExecutor
+} from './forceSourceDeployManifest';
 export {
   forceSourceDeployMultipleSourcePaths,
-  forceSourceDeploySourcePath
+  forceSourceDeploySourcePath,
+  ForceSourceDeploySourcePathExecutor,
+  LibraryDeploySourcePathExecutor
 } from './forceSourceDeploySourcePath';
-export { forceSourcePull } from './forceSourcePull';
-export { forceSourcePush } from './forceSourcePush';
-export { forceSourceRetrieveSourcePath } from './forceSourceRetrieveSourcePath';
-export { forceSourceRetrieveManifest } from './forceSourceRetrieveManifest';
-export { forceSourceStatus } from './forceSourceStatus';
+export { forceSourcePull, ForceSourcePullExecutor } from './forceSourcePull';
+export { forceSourcePush, ForceSourcePushExecutor } from './forceSourcePush';
+export {
+  forceSourceRetrieveSourcePath,
+  ForceSourceRetrieveSourcePathExecutor,
+  LibraryRetrieveSourcePathExecutor,
+  SourcePathChecker
+} from './forceSourceRetrieveSourcePath';
+export {
+  forceSourceRetrieveManifest,
+  ForceSourceRetrieveManifestExecutor
+} from './forceSourceRetrieveManifest';
+export {
+  forceSourceStatus,
+  ForceSourceStatusExecutor,
+  SourceStatusFlags
+} from './forceSourceStatus';
 export { forceTaskStop } from './forceTaskStop';
 export {
+  forceAnalyticsTemplateCreate,
   forceApexClassCreate,
   forceApexTriggerCreate,
   forceLightningAppCreate,
@@ -36,27 +82,56 @@ export {
   forceLightningEventCreate,
   forceLightningInterfaceCreate,
   forceLightningLwcCreate,
+  forceLightningLwcTestCreate,
   forceVisualforceComponentCreate,
   forceVisualforcePageCreate
 } from './templates';
-export { forceDebuggerStop } from './forceDebuggerStop';
-export { forceConfigList } from './forceConfigList';
-export { forceAliasList } from './forceAliasList';
-export { forceOrgDisplay } from './forceOrgDisplay';
+export {
+  forceDebuggerStop,
+  DebuggerSessionDetachExecutor,
+  IdGatherer,
+  IdSelection,
+  StopActiveDebuggerSessionExecutor
+} from './forceDebuggerStop';
+export { forceConfigList, ForceConfigList } from './forceConfigList';
+export { forceAliasList, ForceAliasList } from './forceAliasList';
+export { forceOrgDisplay, ForceOrgDisplay } from './forceOrgDisplay';
+export {
+  forcePackageInstall,
+  ForcePackageInstallExecutor,
+  SelectInstallationKey,
+  SelectPackageID
+} from './forcePackageInstall';
 export {
   forceSfdxProjectCreate,
-  forceProjectWithManifestCreate
+  forceProjectWithManifestCreate,
+  PathExistsChecker,
+  ProjectNameAndPathAndTemplate,
+  projectTemplateEnum,
+  ProjectTemplateItem,
+  SelectProjectFolder,
+  SelectProjectName,
+  SelectProjectTemplate
 } from './forceProjectCreate';
-export { forceStartApexDebugLogging } from './forceStartApexDebugLogging';
+export {
+  forceStartApexDebugLogging,
+  CreateDebugLevel,
+  CreateTraceFlag,
+  ForceQueryTraceFlag,
+  ForceQueryUser,
+  ForceStartApexDebugLoggingExecutor,
+  UpdateDebugLevelsExecutor,
+  UpdateTraceFlagsExecutor
+} from './forceStartApexDebugLogging';
 export {
   forceStopApexDebugLogging,
-  turnOffLogging
+  turnOffLogging,
+  ForceStopApexDebugLoggingExecutor
 } from './forceStopApexDebugLogging';
-export { forceApexLogGet } from './forceApexLogGet';
-export { forceAuthLogoutAll } from './forceAuthLogout';
+export { forceAuthLogoutAll, ForceAuthLogoutAll } from './forceAuthLogout';
 import { DeveloperLogTraceFlag } from '../traceflag/developerLogTraceFlag';
 export const developerLogTraceFlag = DeveloperLogTraceFlag.getInstance();
-export { forceConfigSet } from './forceConfigSet';
+export { forceConfigSet, ForceConfigSetExecutor } from './forceConfigSet';
 export {
   forceDescribeMetadata,
   ForceDescribeMetadataExecutor
@@ -71,3 +146,15 @@ export {
   ForceSourceDiffExecutor,
   handleDiffResponse
 } from './forceSourceDiff';
+export { forceOrgList } from './forceOrgList';
+export { forceOrgDelete } from './forceOrgDelete';
+export { BaseDeployExecutor } from './baseDeployCommand';
+export { forceFunctionCreate } from './templates/forceFunctionCreate';
+export {
+  forceFunctionStart,
+  forceFunctionStop,
+  forceFunctionDebugInvoke,
+  forceFunctionInvoke,
+  registerFunctionInvokeCodeLensProvider
+} from './functions';
+export { checkSObjectsAndRefresh, forceRefreshSObjects, initSObjectDefinitions } from './forceRefreshSObjects';

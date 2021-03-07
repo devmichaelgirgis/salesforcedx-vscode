@@ -9,23 +9,37 @@ import {
   ContinueResponse,
   ParametersGatherer
 } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
+import {
+  ComponentSet,
+  registryData,
+  SourceComponent
+} from '@salesforce/source-deploy-retrieve';
 import { expect } from 'chai';
+import * as path from 'path';
 import { join } from 'path';
 import * as sinon from 'sinon';
 import { window } from 'vscode';
+import * as vscode from 'vscode';
 import {
   CommandletExecutor,
   CompositeParametersGatherer,
   DemoModePromptGatherer,
   EmptyParametersGatherer,
+  FileSelection,
+  FileSelector,
   SelectOutputDir,
   SfdxCommandlet,
   SimpleGatherer
 } from '../../../../src/commands/util';
+import {
+  PromptConfirmGatherer,
+  SelectLwcComponentDir
+} from '../../../../src/commands/util/parameterGatherers';
+import { nls } from '../../../../src/messages';
 import { SfdxPackageDirectories } from '../../../../src/sfdxProject';
 import { getRootWorkspacePath } from '../../../../src/util';
 
-const SFDX_SIMPLE_NUM_OF_DIRS = 14;
+const SFDX_SIMPLE_NUM_OF_DIRS = 16;
 
 // tslint:disable:no-unused-expression
 describe('Parameter Gatherers', () => {
@@ -43,20 +57,20 @@ describe('Parameter Gatherers', () => {
   describe('CompositeParametersGatherer', () => {
     it('Should proceed to next gatherer if previous gatherer in composite gatherer is CONTINUE', async () => {
       const compositeParameterGatherer = new CompositeParametersGatherer(
-        new class implements ParametersGatherer<{}> {
+        new (class implements ParametersGatherer<{}> {
           public async gather(): Promise<
             CancelResponse | ContinueResponse<{}>
           > {
             return { type: 'CONTINUE', data: {} };
           }
-        }(),
-        new class implements ParametersGatherer<{}> {
+        })(),
+        new (class implements ParametersGatherer<{}> {
           public async gather(): Promise<
             CancelResponse | ContinueResponse<{}>
           > {
             return { type: 'CONTINUE', data: {} };
           }
-        }()
+        })()
       );
 
       const response = await compositeParameterGatherer.gather();
@@ -65,20 +79,20 @@ describe('Parameter Gatherers', () => {
 
     it('Should not proceed to next gatherer if previous gatherer in composite gatherer is CANCEL', async () => {
       const compositeParameterGatherer = new CompositeParametersGatherer(
-        new class implements ParametersGatherer<{}> {
+        new (class implements ParametersGatherer<{}> {
           public async gather(): Promise<
             CancelResponse | ContinueResponse<{}>
           > {
             return { type: 'CANCEL' };
           }
-        }(),
-        new class implements ParametersGatherer<{}> {
+        })(),
+        new (class implements ParametersGatherer<{}> {
           public async gather(): Promise<
             CancelResponse | ContinueResponse<{}>
           > {
             throw new Error('This should not be called');
           }
-        }()
+        })()
       );
 
       await compositeParameterGatherer.gather();
@@ -87,25 +101,25 @@ describe('Parameter Gatherers', () => {
     it('Should call executor if composite gatherer is CONTINUE', async () => {
       let executed = false;
       const commandlet = new SfdxCommandlet(
-        new class {
+        new (class {
           public check(): boolean {
             return true;
           }
-        }(),
+        })(),
         new CompositeParametersGatherer(
-          new class implements ParametersGatherer<{}> {
+          new (class implements ParametersGatherer<{}> {
             public async gather(): Promise<
               CancelResponse | ContinueResponse<{}>
             > {
               return { type: 'CONTINUE', data: {} };
             }
-          }()
+          })()
         ),
-        new class implements CommandletExecutor<{}> {
+        new (class implements CommandletExecutor<{}> {
           public execute(response: ContinueResponse<{}>): void {
             executed = true;
           }
-        }()
+        })()
       );
 
       await commandlet.run();
@@ -115,28 +129,93 @@ describe('Parameter Gatherers', () => {
 
     it('Should not call executor if composite gatherer is CANCEL', async () => {
       const commandlet = new SfdxCommandlet(
-        new class {
+        new (class {
           public check(): boolean {
             return true;
           }
-        }(),
+        })(),
         new CompositeParametersGatherer(
-          new class implements ParametersGatherer<{}> {
+          new (class implements ParametersGatherer<{}> {
             public async gather(): Promise<
               CancelResponse | ContinueResponse<{}>
             > {
               return { type: 'CANCEL' };
             }
-          }()
+          })()
         ),
-        new class implements CommandletExecutor<{}> {
+        new (class implements CommandletExecutor<{}> {
           public execute(response: ContinueResponse<{}>): void {
             throw new Error('This should not be called');
           }
-        }()
+        })()
       );
 
       await commandlet.run();
+    });
+  });
+
+  describe('FileSelectionGatherer', () => {
+    const displayMessage = 'My sample info';
+    const errorMessage = 'You hit an error!';
+    const gatherer = new FileSelector(
+      displayMessage,
+      errorMessage,
+      'config/**/*-scratch-def.json'
+    );
+    let showQuickPickStub: sinon.SinonStub;
+    let notificationStub: sinon.SinonStub;
+    let fileFinderStub: sinon.SinonStub;
+
+    beforeEach(() => {
+      showQuickPickStub = sinon.stub(vscode.window, 'showQuickPick');
+      notificationStub = sinon.stub(vscode.window, 'showErrorMessage');
+      fileFinderStub = sinon.stub(vscode.workspace, 'findFiles');
+    });
+
+    afterEach(() => {
+      showQuickPickStub.restore();
+      notificationStub.restore();
+      fileFinderStub.restore();
+    });
+
+    it('Should return continue if file has been selected', async () => {
+      fileFinderStub.returns([
+        vscode.Uri.file('/somepath/project-scratch-def.json')
+      ]);
+      showQuickPickStub.returns({
+        label: 'project-scratch-def.json',
+        description: '/somepath/project-scratch-def.json'
+      });
+
+      const response = (await gatherer.gather()) as ContinueResponse<
+        FileSelection
+      >;
+
+      expect(showQuickPickStub.callCount).to.equal(1);
+      expect(response.type).to.equal('CONTINUE');
+      expect(response.data.file, 'project-scratch-def.json');
+    });
+
+    it('Should return cancel if no file was selected', async () => {
+      fileFinderStub.returns([
+        vscode.Uri.file('/somepath/project-scratch-def.json')
+      ]);
+      showQuickPickStub.returns(undefined);
+
+      const response = await gatherer.gather();
+
+      expect(showQuickPickStub.callCount).to.equal(1);
+      expect(response.type).to.equal('CANCEL');
+    });
+
+    it('Should display error when no files are available for selection', async () => {
+      fileFinderStub.returns(new Array());
+
+      const response = await gatherer.gather();
+
+      expect(response.type).to.equal('CANCEL');
+      expect(notificationStub.calledOnce).to.be.true;
+      expect(notificationStub.getCall(0).args[0]).to.equal(errorMessage);
     });
   });
 
@@ -240,6 +319,49 @@ describe('Parameter Gatherers', () => {
       }
     });
   });
+  describe('SelectLwcComponentDir', async () => {
+    it('Should gather filepath and Lightning web component options', async () => {
+      const selector = new SelectLwcComponentDir();
+      const packageDirs = ['force-app'];
+      const filePath = path.join('force-app', 'main', 'default', 'lwc', 'test');
+      const component = SourceComponent.createVirtualComponent(
+        {
+          name: 'test',
+          type: registryData.types.lightningcomponentbundle,
+          xml: path.join(filePath, 'test.js-meta.xml')
+        },
+        []
+      );
+      const mockComponents = new ComponentSet([component]);
+      const getPackageDirPathsStub = sinon.stub(
+        SfdxPackageDirectories,
+        'getPackageDirectoryPaths'
+      );
+      const getLwcsStub = sinon.stub(ComponentSet, 'fromSource');
+      getLwcsStub
+        .withArgs(path.join(getRootWorkspacePath(), packageDirs[0]))
+        .returns(mockComponents);
+      const showMenuStub = sinon.stub(selector, 'showMenu');
+      getPackageDirPathsStub.returns(packageDirs);
+      const dirChoice = packageDirs[0];
+      const componentChoice = component.fullName;
+      showMenuStub.onFirstCall().returns(dirChoice);
+      showMenuStub.onSecondCall().returns(componentChoice);
+
+      const response = await selector.gather();
+      try {
+        expect(showMenuStub.getCall(0).calledWith(packageDirs)).to.be.true;
+        expect(response).to.eql({
+          type: 'CONTINUE',
+          data: { outputdir: filePath, fileName: componentChoice }
+        });
+      } finally {
+        getPackageDirPathsStub.restore();
+        showMenuStub.restore();
+        getLwcsStub.restore();
+      }
+    });
+  });
 
   describe('SimpleGatherer', () => {
     it('Should gather input that was given into a ContinueResponse', async () => {
@@ -248,6 +370,33 @@ describe('Parameter Gatherers', () => {
       expect(response).to.eql({
         type: 'CONTINUE',
         data: input
+      });
+    });
+  });
+
+  describe('PromptConfirmGatherer', () => {
+    it('Should return CONTINUE if confirmation to proceed is positive', async () => {
+      const promptConfirm = new PromptConfirmGatherer('question');
+      const showMenuStub = sinon.stub(promptConfirm, 'showMenu');
+      const choice = nls.localize('parameter_gatherer_prompt_confirm_option');
+      showMenuStub.onFirstCall().returns(choice);
+      const response = await promptConfirm.gather();
+      expect(response).to.eql({
+        type: 'CONTINUE',
+        data: {
+          choice
+        }
+      });
+    });
+
+    it('Should return CANCEL if confirmation to proceed is negative', async () => {
+      const promptConfirm = new PromptConfirmGatherer('question');
+      const showMenuStub = sinon.stub(promptConfirm, 'showMenu');
+      const choice = nls.localize('parameter_gatherer_prompt_cancel_option');
+      showMenuStub.onFirstCall().returns(choice);
+      const response = await promptConfirm.gather();
+      expect(response).to.eql({
+        type: 'CANCEL'
       });
     });
   });

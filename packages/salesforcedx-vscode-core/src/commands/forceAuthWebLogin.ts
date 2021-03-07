@@ -45,6 +45,8 @@ export const SANDBOX_URL = 'https://test.salesforce.com';
 export class ForceAuthWebLoginExecutor extends SfdxCommandletExecutor<
   AuthParams
 > {
+  protected showChannelOutput = isSFDXContainerMode();
+
   public build(data: AuthParams): Command {
     const command = new SfdxCommandBuilder().withDescription(
       nls.localize('force_auth_web_login_authorize_org_text')
@@ -65,6 +67,7 @@ export class ForceAuthWebLoginExecutor extends SfdxCommandletExecutor<
     return command.build();
   }
 }
+
 export abstract class ForceAuthDemoModeExecutor<
   T
 > extends SfdxCommandletExecutor<T> {
@@ -229,7 +232,7 @@ export async function promptLogOutForProdOrg() {
 const workspaceChecker = new SfdxWorkspaceChecker();
 const parameterGatherer = new AuthParamsGatherer();
 
-export function createExecutor(): SfdxCommandletExecutor<{}> {
+export function createAuthWebLoginExecutor(): SfdxCommandletExecutor<{}> {
   return isDemoMode()
     ? new ForceAuthWebLoginDemoModeExecutor()
     : new ForceAuthWebLoginExecutor();
@@ -239,7 +242,7 @@ export async function forceAuthWebLogin() {
   const commandlet = new SfdxCommandlet(
     workspaceChecker,
     parameterGatherer,
-    createExecutor()
+    createAuthWebLoginExecutor()
   );
   await commandlet.run();
 }

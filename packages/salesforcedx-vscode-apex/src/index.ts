@@ -6,25 +6,29 @@
  */
 
 import { TestRunner } from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
-import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { LanguageClient } from 'vscode-languageclient/lib/main';
 import { CodeCoverage, StatusBarToggle } from './codecoverage';
 import {
+  forceApexDebugClassRunCodeActionDelegate,
+  forceApexDebugMethodRunCodeActionDelegate,
+  forceApexLogGet,
   forceApexTestClassRunCodeAction,
   forceApexTestClassRunCodeActionDelegate,
   forceApexTestMethodRunCodeAction,
   forceApexTestMethodRunCodeActionDelegate,
-  forceGenerateFauxClassesCreate,
-  initSObjectDefinitions
+  forceApexTestRun
 } from './commands';
+import { forceApexExecute } from './commands/forceApexExecute';
 import {
-  ENABLE_SOBJECT_REFRESH_ON_STARTUP,
-  SFDX_APEX_CONFIGURATION_NAME
+  APEX_EXTENSION_NAME,
+  LSP_ERR
 } from './constants';
+import { workspaceContext } from './context';
 import {
   ClientStatus,
+  enableJavaDocSymbols,
   getApexTests,
   getExceptionBreakpointInfo,
   getLineBreakpointInfo,
@@ -35,11 +39,6 @@ import { nls } from './messages';
 import { telemetryService } from './telemetry';
 import { ApexTestOutlineProvider } from './views/testOutlineProvider';
 import { ApexTestRunner, TestRunType } from './views/testRunner';
-
-const sfdxCoreExports = vscode.extensions.getExtension(
-  'salesforce.salesforcedx-vscode-core'
-)!.exports;
-const coreTelemetryService = sfdxCoreExports.telemetryService;
 
 let languageClient: LanguageClient | undefined;
 
@@ -65,10 +64,16 @@ export async function activate(context: vscode.ExtensionContext) {
     throw new Error(nls.localize('cannot_determine_workspace'));
   }
 
+  // Workspace Context
+  await workspaceContext.initialize(context);
+
   // Telemetry
-  telemetryService.initializeService(
-    coreTelemetryService.getReporter(),
-    coreTelemetryService.isTelemetryEnabled()
+  const extensionPackage = require(context.asAbsolutePath('./package.json'));
+  await telemetryService.initializeService(
+    context,
+    APEX_EXTENSION_NAME,
+    extensionPackage.aiKey,
+    extensionPackage.version
   );
 
   // Initialize Apex language server
@@ -85,27 +90,20 @@ export async function activate(context: vscode.ExtensionContext) {
       .then(async () => {
         if (languageClient) {
           languageClient.onNotification('indexer/done', async () => {
-            // Refresh SObject definitions if there aren't any faux classes
-            const sobjectRefreshStartup: boolean = vscode.workspace
-              .getConfiguration(SFDX_APEX_CONFIGURATION_NAME)
-              .get<boolean>(ENABLE_SOBJECT_REFRESH_ON_STARTUP, false);
-            if (sobjectRefreshStartup) {
-              initSObjectDefinitions(
-                vscode.workspace.workspaceFolders![0].uri.fsPath
-              ).catch(e => telemetryService.sendErrorEvent(e.message, e.stack));
-            }
-
             await testOutlineProvider.refresh();
           });
         }
         // TODO: This currently keeps existing behavior in which we set the language
         // server to ready before it finishes indexing. We'll evaluate this in the future.
         languageClientUtils.setStatus(ClientStatus.Ready, '');
-        telemetryService.sendApexLSPActivationEvent(langClientHRStart);
+        const startTime = telemetryService.getEndHRTime(langClientHRStart);
+        telemetryService.sendEventData('apexLSPStartup', undefined, {
+          activationTime: startTime
+        });
       })
       .catch(err => {
         // Handled by clients
-        telemetryService.sendApexLSPError(err);
+        telemetryService.sendException(LSP_ERR, err.message);
         languageClientUtils.setStatus(
           ClientStatus.Error,
           nls.localize('apex_language_server_failed_activate')
@@ -115,6 +113,9 @@ export async function activate(context: vscode.ExtensionContext) {
     console.error('Apex language server failed to initialize');
     languageClientUtils.setStatus(ClientStatus.Error, e);
   }
+
+  // Javadoc support
+  enableJavaDocSymbols();
 
   // Commands
   const commands = registerCommands(context);
@@ -161,6 +162,18 @@ function registerCommands(
     'sfdx.force.apex.test.method.run.delegate',
     forceApexTestMethodRunCodeActionDelegate
   );
+  const forceApexDebugClassRunDelegateCmd = vscode.commands.registerCommand(
+    'sfdx.force.apex.debug.class.run.delegate',
+    forceApexDebugClassRunCodeActionDelegate
+  );
+  const forceApexDebugMethodRunDelegateCmd = vscode.commands.registerCommand(
+    'sfdx.force.apex.debug.method.run.delegate',
+    forceApexDebugMethodRunCodeActionDelegate
+  );
+  const forceApexLogGetCmd = vscode.commands.registerCommand(
+    'sfdx.force.apex.log.get',
+    forceApexLogGet
+  );
   const forceApexTestLastMethodRunCmd = vscode.commands.registerCommand(
     'sfdx.force.apex.test.last.method.run',
     forceApexTestMethodRunCodeAction
@@ -169,19 +182,34 @@ function registerCommands(
     'sfdx.force.apex.test.method.run',
     forceApexTestMethodRunCodeAction
   );
-  const forceGenerateFauxClassesCmd = vscode.commands.registerCommand(
-    'sfdx.force.internal.refreshsobjects',
-    forceGenerateFauxClassesCreate
+  const forceApexTestRunCmd = vscode.commands.registerCommand(
+    'sfdx.force.apex.test.run',
+    forceApexTestRun
+  );
+  const forceApexExecuteDocumentCmd = vscode.commands.registerCommand(
+    'sfdx.force.apex.execute.document',
+    forceApexExecute,
+    false
+  );
+  const forceApexExecuteSelectionCmd = vscode.commands.registerCommand(
+    'sfdx.force.apex.execute.selection',
+    forceApexExecute,
+    true
   );
   return vscode.Disposable.from(
-    forceApexToggleColorizerCmd,
-    forceApexTestLastClassRunCmd,
+    forceApexDebugClassRunDelegateCmd,
+    forceApexDebugMethodRunDelegateCmd,
+    forceApexExecuteDocumentCmd,
+    forceApexExecuteSelectionCmd,
+    forceApexLogGetCmd,
     forceApexTestClassRunCmd,
     forceApexTestClassRunDelegateCmd,
+    forceApexTestLastClassRunCmd,
     forceApexTestLastMethodRunCmd,
     forceApexTestMethodRunCmd,
     forceApexTestMethodRunDelegateCmd,
-    forceGenerateFauxClassesCmd
+    forceApexTestRunCmd,
+    forceApexToggleColorizerCmd
   );
 }
 
@@ -245,24 +273,6 @@ async function registerTestView(
   return vscode.Disposable.from(...testViewItems);
 }
 
-export async function getApexClassFiles(): Promise<vscode.Uri[]> {
-  const jsonProject = (await vscode.workspace.findFiles(
-    '**/sfdx-project.json'
-  ))[0];
-  const innerText = fs.readFileSync(jsonProject.path);
-  const jsonObject = JSON.parse(innerText.toString());
-  const packageDirectories =
-    jsonObject.packageDirectories || jsonObject.PackageDirectories;
-  const allClasses = new Array<vscode.Uri>();
-  for (const packageDirectory of packageDirectories) {
-    const pattern = path.join(packageDirectory.path, '**/*.cls');
-    const apexClassFiles = await vscode.workspace.findFiles(pattern);
-    allClasses.push(...apexClassFiles);
-  }
-  return allClasses;
-}
-
-// tslint:disable-next-line:no-empty
-export function deactivate() {
+export async function deactivate() {
   telemetryService.sendExtensionDeactivationEvent();
 }

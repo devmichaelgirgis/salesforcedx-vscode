@@ -42,6 +42,8 @@ export const messages = {
 
   status_bar_text: `$(x) %s`,
   status_bar_tooltip: 'Click to cancel the command',
+  status_bar_open_org_tooltip: 'Open Org',
+  status_bar_org_picker_tooltip: 'Change Default Org',
 
   force_auth_web_login_authorize_dev_hub_text: 'SFDX: Authorize a Dev Hub',
   force_auth_web_login_authorize_org_text: 'SFDX: Authorize an Org',
@@ -52,19 +54,35 @@ export const messages = {
   parameter_gatherer_enter_file_name: 'Enter desired filename',
   parameter_gatherer_enter_dir_name:
     'Enter desired directory (Press Enter to confirm or Esc to cancel)',
+  parameter_gatherer_enter_lwc_name:
+    'Enter desired Lightning Web Component (Press Enter to confirm or Esc to cancel)',
   parameter_gatherer_enter_username_name: 'Enter target username',
   parameter_gatherer_enter_alias_name:
-    'Enter an org alias or use default alias',
+    'Enter an org alias or use the default alias',
   parameter_gatherer_enter_custom_url:
-    'Enter a custom login URL or use default URL',
+    'Enter a custom login URL or use the default URL',
+  parameter_gatherer_enter_scratch_org_def_files:
+    'Select scratch definition file. Matched files with format: "config/**/*-scratch-def.json"',
   parameter_gatherer_enter_scratch_org_expiration_days:
     'Enter the number of days (1–30) until scratch org expiration or use the default value (7)',
+  parameter_gatherer_enter_package_id: 'Enter the ID of the package to install',
+  parameter_gatherer_enter_installation_key_if_necessary:
+    'Enter the installation key, if required, or leave the field blank',
   parameter_gatherer_enter_project_name: 'Enter project name',
   parameter_gatherer_paste_forceide_url: 'Paste forceide:// URL from Setup',
   parameter_gatherer_paste_forceide_url_placeholder:
     'forceide:// URL from Setup',
   parameter_gatherer_invalid_forceide_url:
     "The forceide:// URL is invalid. From your subscriber's org, copy and paste the forceide:// URL shown on the Apex Debugger page in Setup.",
+  parameter_gatherer_enter_function: 'Enter function details',
+  parameter_gatherer_prompt_confirm_option: 'Continue',
+  parameter_gatherer_prompt_cancel_option: 'Cancel',
+  parameter_gatherer_placeholder_org_list_clean:
+    'Confirm to continue removing deleted and expired scratch orgs',
+  parameter_gatherer_placeholder_delete_selected_org:
+    'Confirm to continue deleting the selected org',
+  parameter_gatherer_placeholder_delete_default_org:
+    'Confirm to continue deleting the default org',
 
   force_org_create_default_scratch_org_text:
     'SFDX: Create a Default Scratch Org...',
@@ -94,6 +112,7 @@ export const messages = {
     'You can run SFDX: Deploy Source in Manifest to Org only on a manifest file.',
   force_source_retrieve_text: 'SFDX: Retrieve Source from Org',
   force_source_retrieve_display_text: 'Retrieve Source from Org',
+  force_source_retrieve_and_open_display_text: 'Retrieve and Open Source',
   force_source_retrieve_select_file_or_directory:
     'You can run SFDX: Retrieve Source from Org only on a source file or directory.',
   force_source_retrieve_select_manifest:
@@ -111,18 +130,36 @@ export const messages = {
   force_source_status_text:
     'View All Changes (Local and in Default Scratch Org)',
 
-  force_apex_test_run_text: 'SFDX: Invoke Apex Tests...',
-  force_apex_test_run_all_test_label: 'All tests',
-  force_apex_test_run_all_tests_description_text:
-    'Runs all tests in the current project',
-
+  force_analytics_template_create_text:
+    'SFDX: Create Sample Analytics Template',
+  force_analytics_template_name_text: 'template name',
   force_apex_class_create_text: 'SFDX: Create Apex Class',
   force_visualforce_component_create_text: 'SFDX: Create Visualforce Component',
   force_visualforce_page_create_text: 'SFDX: Create Visualforce Page',
-  force_lightning_app_create_text: 'SFDX: Create Lightning App',
-  force_lightning_component_create_text: 'SFDX: Create Lightning Component',
-  force_lightning_event_create_text: 'SFDX: Create Lightning Event',
-  force_lightning_interface_create_text: 'SFDX: Create Lightning Interface',
+  force_lightning_app_create_text: 'SFDX: Create Aura App',
+  force_lightning_component_create_text: 'SFDX: Create Aura Component',
+  force_lightning_event_create_text: 'SFDX: Create Aura Event',
+  force_lightning_interface_create_text: 'SFDX: Create Aura Interface',
+  force_function_create_text: 'SFDX: Create Function',
+  force_function_start_text: 'SFDX: Start Function',
+  force_function_start_no_org_auth:
+    'No default org is set. We recommend that you select an active scratch org (SFDX: Set a Default Org) or create a new scratch org (SFDX: Authorize a Dev Hub, then SFDX: Create a Default Scratch Org).',
+  force_function_start_warning_no_toml:
+    'No function.toml found. Create a function.toml, or create a new function using SFDX: Create Function.',
+  force_function_start_warning_not_in_function_folder:
+    'Open a function file to run SFDX: Start Function',
+  force_function_start_warning_plugin_not_installed:
+    'To run this command, install the Salesforce Functions plugin. For more info, see [Getting Started with Salesforce Functions](https://github.com/forcedotcom/evergreen-docs/blob/master/Getting%20Started%20Guide/Evergreen%20Getting%20Started%20Guide.md#installing-the-salesforce-functions-sfdx-plugin).',
+  force_function_start_warning_docker_not_installed_or_not_started:
+    'It looks like Docker is not installed or running. To run this command, install and start Docker Desktop from [https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)',
+  force_function_start_unexpected_error:
+    'SFDX: Start Function exited unexpectedly with code %s',
+  force_function_invoke_text: 'SFDX: Invoke Function',
+  force_function_invoke_tooltip: 'Invoke',
+  force_function_debug_invoke_tooltip: 'Debug Invoke',
+  force_function_stop_text: 'SFDX: Stop Function',
+  force_function_stop_in_progress: 'Stopping Function',
+  force_function_stop_not_started: 'No Function is running locally',
   force_source_status_local_text: 'SFDX: View Local Changes',
   force_source_status_remote_text: 'SFDX: View Changes in Default Scratch Org',
   warning_prompt_file_overwrite:
@@ -141,8 +178,11 @@ export const messages = {
   warning_prompt_other_not_shown: '...%s other components not shown\n',
   force_config_list_text: 'SFDX: List All Config Variables',
   force_alias_list_text: 'SFDX: List All Aliases',
+  force_org_delete_default_text: 'SFDX: Delete Default Org',
+  force_org_delete_username_text: 'SFDX: Delete Org...',
   force_org_display_default_text: 'SFDX: Display Org Details for Default Org',
   force_org_display_username_text: 'SFDX: Display Org Details...',
+  force_org_list_clean_text: 'SFDX: Remove Deleted and Expired Orgs',
   force_debugger_query_session_text: 'query for Apex Debugger session',
   force_debugger_stop_text: 'SFDX: Stop Apex Debugger Session',
   force_debugger_stop_none_found_text: 'No Apex Debugger session found.',
@@ -154,11 +194,17 @@ export const messages = {
     'SFDX: Execute Anonymous Apex with Editor Contents',
   force_apex_execute_selection_text:
     'SFDX: Execute Anonymous Apex with Currently Selected Text',
+  force_package_install_text: 'SFDX: Install Package',
   force_project_create_text: 'SFDX: Create Project',
   force_project_create_open_dialog_create_label: 'Create Project',
   force_project_create_standard_template: 'Standard project template (default)',
+  force_project_create_standard_template_display_text: 'Standard',
+  force_project_create_empty_template_display_text: 'Empty',
+  force_project_create_analytics_template_display_text: 'Analytics',
   force_project_create_empty_template: 'Empty project template',
   force_project_create_analytics_template: 'Analytics project template',
+  force_project_create_functions_template_display_text: 'Functions',
+  force_project_create_functions_template: 'Functions project template',
   force_apex_trigger_create_text: 'SFDX: Create Apex Trigger',
   force_start_apex_debug_logging:
     'SFDX: Turn On Apex Debug Log for Replay Debugger',
@@ -186,13 +232,7 @@ export const messages = {
     'SFDX: ISV Debugger Setup, Step 7 of 7: Converting package: %s',
   isv_debug_bootstrap_processing_package: 'Processing package: %s',
   isv_debug_bootstrap_generate_launchjson: 'Creating launch configuration',
-  isv_debug_bootstrap_open_project:
-    'Opening project in new Visual Studio Code window',
-
-  force_apex_log_get_text: 'SFDX: Get Apex Debug Logs...',
-  force_apex_log_get_no_logs_text: 'No Apex debug logs were found',
-  force_apex_log_get_pick_log_text: 'Pick an Apex debug log to get',
-  force_apex_log_list_text: 'Getting Apex debug logs',
+  isv_debug_bootstrap_open_project: 'Opening project in Visual Studio Code',
 
   error_creating_packagexml: 'Error creating package.xml. %s',
   error_extracting_org_source: 'Error extracting downloaded Apex source. %s',
@@ -238,6 +278,7 @@ export const messages = {
   error_source_path_not_in_package_directory_text:
     'Error deploying or retrieving source: The file or directory that you tried to deploy or retrieve isn\'t in a package directory that\'s specified in your sfdx-project.json file. Add this location to your "packageDirectories" value, or deploy or retrieve a different file or directory. For details about sfdx-project.json, see: https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_dev_ws_config.htm',
   org_select_text: 'Select an org to set as default',
+  org_expired: 'Expired',
   missing_default_org: 'No Default Org Set',
   force_config_set_org_text: 'SFDX: Set a Default Org',
   error_parsing_sfdx_project_file:
@@ -249,6 +290,8 @@ export const messages = {
   table_header_type: 'TYPE',
   table_header_full_name: 'FULL NAME',
   table_header_state: 'STATE',
+  table_header_error_type: 'MESSAGE TYPE',
+  table_header_message: 'MESSAGE',
   table_no_results_found: 'No results found',
   table_title_deployed_source: 'Deployed Source',
   table_title_deploy_errors: 'Deploy Errors',
@@ -270,19 +313,27 @@ export const messages = {
   aura_bundle_message_name: 'Aura Bundle',
   lwc_message_name: 'Lightning Web Component',
   force_lightning_lwc_create_text: 'SFDX: Create Lightning Web Component',
+  force_lightning_lwc_test_create_text:
+    'SFDX: Create Lightning Web Component Test',
   empty_components: 'No components available',
   error_auth_token: 'Error refreshing authentication token.',
   error_no_org_found: 'No org authorization info found.',
   error_invalid_org_alias:
-    'Alias can only contain underscores and alphanumeric characters',
+    'Alias can only contain underscores, spaces and alphanumeric characters',
   error_invalid_expiration_days: 'Number of days should be between 1 and 30',
   error_fetching_metadata: 'Error fetching metadata for org.',
   error_org_browser_text:
     'Run "SFDX: Authorize an Org" to authorize your org again.',
   error_org_browser_init: 'Org Browser has not been initialized',
+  error_workspace_context_init: 'WorkspaceContext has not been initialized',
   error_overwrite_prompt: 'Error checking workspace for existing components',
+  error_no_scratch_def:
+    'No scratch definition files found. These files must be in the "config" folder and end with "-scratch-def.json". See [Scratch Org Definition File](https://developer.salesforce.com/docs/atlas.en-us.sfdx_dev.meta/sfdx_dev/sfdx_dev_scratch_orgs_def_file.htm) for help.',
   force_list_metadata: 'SFDX: Force List Metadata',
-
+  apex_execute_compile_success: 'Compiled successfully.',
+  apex_execute_runtime_success: 'Executed successfully.',
+  apex_execute_text: 'Execute Anonymous Apex',
+  force_apex_execute_library: 'Apex Library: Execute Anonymous',
   AccessControlPolicy: 'Access Control Policies',
   ActionLinkGroupTemplate: 'Action Link Group Templates',
   AIAssistantTemplate: 'AI Assistant Templates',
@@ -469,11 +520,79 @@ export const messages = {
   WebLink: 'Web Links',
   Workflow: 'Workflows',
   XOrgHub: 'X Org Hubs',
+  LightningMessageChannel: 'Lightning Message Channels',
+  InboundNetworkConnection: 'Inbound Network Connections',
+  OutboundNetworkConnection: 'Outbound Network Connections',
+  MutingPermissionSet: 'Muting Permission Sets',
+  MyDomainDiscoverableLogin: 'MyDomain Discoverable Login',
+  UserProvisioningConfig: 'User Provisioning Configs',
+  ApexEmailNotifications: 'Apex Email Notifications',
+  PlatformEventChannelMember: 'Platform Event Channel Members',
+  CanvasMetadata: 'Canvas Metadatas',
+  MobileApplicationDetail: 'Mobile Application Details',
+  NotificationTypeConfig: 'Notification Type Configs',
+  LightningOnboardingConfig: 'Lightning Onboarding Configs',
+  ManagedContentType: 'Managed Content Types',
+  PaymentGatewayProvider: 'Payment Gateway Providers',
+  EmbeddedServiceMenuSettings: 'Embedded Service Menu Settings',
+  CallCoachingMediaProvider: 'Call Coaching Media Providers',
+
+  conflict_detect_error:
+    'An error was encountered during conflict detection. %s',
+  conflict_detect_retrieve_org_source:
+    'Conflict Detection: retrieving org source',
+  conflict_detect_convert_org_source:
+    'Conflict Detection: converting org source',
+  conflict_detect_conflicts_during_deploy:
+    'Conflicts are detected while deploying metadata. Select Override Conflicts to proceed or Cancel to view the conflicts.',
+  conflict_detect_conflicts_during_retrieve:
+    'Conflicts are detected while retrieving metadata. Select Override Conflicts to proceed or Cancel to view the conflicts.',
+  conflict_detect_override: 'Override Conflicts',
+  conflict_detect_show_conflicts: 'Show Conflicts',
+  conflict_detect_conflict_header:
+    'Conflicts:\n    Found %s file(s) in conflict (scanned %s org files, %s local files):\n',
+  conflict_detect_command_hint:
+    '\nRun the following command to overwrite the conflicts:\n  %s',
+  conflict_detect_no_default_username: 'No default username for this project',
+  conflict_detect_no_default_package_dir:
+    'No default package directory for this project',
+  conflict_detect_view_init: 'Conflict detection view has not been initialized',
+  conflict_detect_not_enabled:
+    'Enable the Detect Conflicts at Sync setting to view org differences',
+  conflict_detect_root_title: 'Org Differences',
+  conflict_detect_view_root: '%s : %s file difference(s)',
+  conflict_detect_no_conflicts: 'No conflicts',
+  conflict_detect_diff_title: '%s//%s ↔ local//%s',
+  conflict_detect_diff_command_title: 'Compare Files',
 
   force_source_diff_text: 'SFDX: Diff File Against Org',
   force_source_diff_unsupported_type:
     'Diff for this metadata type is currently not supported',
   force_source_diff_title: '%s//%s ↔ local//%s',
   force_source_diff_command_not_found:
-    'This command requires installing the @salesforce/sfdx-diff plugin. For detailed instructions go to https://forcedotcom.github.io/salesforcedx-vscode/articles/user-guide/source-diff'
+    'To run this command, first install the @salesforce/sfdx-diff plugin. For more info, see [https://forcedotcom.github.io/salesforcedx-vscode/articles/user-guide/source-diff](https://forcedotcom.github.io/salesforcedx-vscode/articles/user-guide/source-diff).',
+  beta_tapi_mdcontainer_error: 'Unexpected error creating metadata container',
+  beta_tapi_membertype_error: 'Unexpected error creating %s member',
+  beta_tapi_car_error: 'Unexpected error creating container async request',
+  beta_tapi_queue_status: 'The deploy is still in the Queue',
+  lib_retrieve_result_title: 'Retrieved Source',
+  lib_retrieve_result_parse_error:
+    'Not able to parse current results. Raw result: %s',
+  lib_retrieve_message_title: 'Retrieve Warnings',
+  package_id_validation_error:
+    'Package ID should be a 15 or 18 character Id that starts with 04t',
+  package_id_gatherer_placeholder: '04t...',
+  force_function_enter_function: 'Enter a name for the function',
+  force_function_enter_language: 'Select a language for your function',
+  force_function_install_npm_dependencies_progress:
+    'Installing NPM dependencies',
+  force_function_install_npm_dependencies_error:
+    "%s. Make sure you have NodeJS installed (https://nodejs.org/) and then run 'npm install' to install dependencies from package.json",
+  sobjects_refresh_needed:
+    "You don't have any sObjects cached locally. To take advantage of autocompletion for sObjects in Apex code, run SFDX: Refresh SObject Definitions.",
+  sobjects_refresh_now: 'Run SFDX: Refresh SObject Definitions',
+  force_sobjects_refresh: 'SFDX: Refresh SObject Definitions',
+  sobject_refresh_all: 'All SObjects',
+  sobject_refresh_custom: 'Custom SObjects',
+  sobject_refresh_standard: 'Standard SObjects'
 };

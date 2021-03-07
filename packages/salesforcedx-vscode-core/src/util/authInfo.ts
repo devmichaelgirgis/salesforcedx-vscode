@@ -4,7 +4,7 @@
  * Licensed under the BSD 3-Clause license.
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
-import { Aliases, AuthInfo } from '@salesforce/core';
+import { Aliases, AuthInfo, Connection } from '@salesforce/core';
 import { isUndefined } from 'util';
 import * as vscode from 'vscode';
 import { channelService } from '../channels';
@@ -85,11 +85,8 @@ export class OrgAuthInfo {
     }
   }
 
-  public static async getUsername(
-    usernameOrAlias: string
-  ): Promise<string | undefined> {
-    const username = await Aliases.fetch(usernameOrAlias);
-    return Promise.resolve(username);
+  public static async getUsername(usernameOrAlias: string): Promise<string> {
+    return (await Aliases.fetch(usernameOrAlias)) || usernameOrAlias;
   }
 
   public static async isAScratchOrg(username: string): Promise<boolean> {
@@ -102,6 +99,28 @@ export class OrgAuthInfo {
     } catch (e) {
       throw e;
     }
+  }
+
+  public static async getConnection(
+    usernameOrAlias?: string
+  ): Promise<Connection> {
+    let _usernameOrAlias;
+
+    if (usernameOrAlias) {
+      _usernameOrAlias = usernameOrAlias;
+    } else {
+      const defaultName = await OrgAuthInfo.getDefaultUsernameOrAlias(true);
+      if (!defaultName) {
+        throw new Error(nls.localize('error_no_default_username'));
+      }
+      _usernameOrAlias = defaultName;
+    }
+
+    const username = await this.getUsername(_usernameOrAlias);
+
+    return await Connection.create({
+      authInfo: await AuthInfo.create({ username })
+    });
   }
 }
 

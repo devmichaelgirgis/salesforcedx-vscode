@@ -6,71 +6,69 @@
  */
 
 import {
-  Command,
-  SfdxCommandBuilder
-} from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
-import { DirFileNameSelection } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
+  DirFileNameSelection,
+  LocalComponent
+} from '@salesforce/salesforcedx-utils-vscode/src/types';
+import {
+  TemplateType,
+  VisualforceComponentOptions
+} from '@salesforce/templates';
 import { nls } from '../../messages';
 import {
   CompositeParametersGatherer,
-  FilePathExistsChecker,
-  GlobStrategyFactory,
-  PathStrategyFactory,
+  MetadataTypeGatherer,
   SelectFileName,
   SelectOutputDir,
   SfdxCommandlet,
-  SfdxWorkspaceChecker,
-  SourcePathStrategy
+  SfdxWorkspaceChecker
 } from '../util';
-import { BaseTemplateCommand } from './baseTemplateCommand';
+import { OverwriteComponentPrompt } from '../util/postconditionCheckers';
+import { LibraryBaseTemplateCommand } from './libraryBaseTemplateCommand';
 import {
   VISUALFORCE_COMPONENT_DIRECTORY,
-  VISUALFORCE_COMPONENT_EXTENSION
+  VISUALFORCE_COMPONENT_TYPE
 } from './metadataTypeConstants';
 
-export class ForceVisualForceComponentCreateExecutor extends BaseTemplateCommand {
-  public build(data: DirFileNameSelection): Command {
-    return new SfdxCommandBuilder()
-      .withDescription(nls.localize('force_visualforce_component_create_text'))
-      .withArg('force:visualforce:component:create')
-      .withFlag('--componentname', data.fileName)
-      .withFlag('--label', data.fileName)
-      .withFlag('--outputdir', data.outputdir)
-      .withLogName('force_visualforce_component_create')
-      .build();
+export class LibraryForceVisualForceComponentCreateExecutor extends LibraryBaseTemplateCommand<
+  DirFileNameSelection
+> {
+  public executionName = nls.localize(
+    'force_visualforce_component_create_text'
+  );
+  public telemetryName = 'force_visualforce_component_create';
+  public metadataTypeName = VISUALFORCE_COMPONENT_TYPE;
+  public templateType = TemplateType.VisualforceComponent;
+  public getOutputFileName(data: DirFileNameSelection) {
+    return data.fileName;
   }
-
-  public sourcePathStrategy: SourcePathStrategy = PathStrategyFactory.createDefaultStrategy();
-
-  public getDefaultDirectory() {
-    return VISUALFORCE_COMPONENT_DIRECTORY;
-  }
-
-  public getFileExtension(): string {
-    return VISUALFORCE_COMPONENT_EXTENSION;
+  public constructTemplateOptions(data: DirFileNameSelection) {
+    const templateOptions: VisualforceComponentOptions = {
+      outputdir: data.outputdir,
+      componentname: data.fileName,
+      label: data.fileName,
+      template: 'DefaultVFComponent'
+    };
+    return templateOptions;
   }
 }
 
 const fileNameGatherer = new SelectFileName();
 const outputDirGatherer = new SelectOutputDir(VISUALFORCE_COMPONENT_DIRECTORY);
+const metadataTypeGatherer = new MetadataTypeGatherer(
+  VISUALFORCE_COMPONENT_TYPE
+);
 
 export async function forceVisualforceComponentCreate() {
+  const createTemplateExecutor = new LibraryForceVisualForceComponentCreateExecutor();
   const commandlet = new SfdxCommandlet(
     new SfdxWorkspaceChecker(),
-    new CompositeParametersGatherer<DirFileNameSelection>(
+    new CompositeParametersGatherer<LocalComponent>(
+      metadataTypeGatherer,
       fileNameGatherer,
       outputDirGatherer
     ),
-    new ForceVisualForceComponentCreateExecutor(),
-    new FilePathExistsChecker(
-      GlobStrategyFactory.createCheckFileInGivenPath(
-        VISUALFORCE_COMPONENT_EXTENSION
-      ),
-      nls.localize(
-        'warning_prompt_file_overwrite',
-        nls.localize('visualforce_component_message_name')
-      )
-    )
+    createTemplateExecutor,
+    new OverwriteComponentPrompt()
   );
   await commandlet.run();
 }

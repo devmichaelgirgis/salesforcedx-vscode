@@ -1,8 +1,9 @@
 # Salesforce Extensions for VS Code
 
-[![Build status](https://ci.appveyor.com/api/projects/status/ek3pftmawcabebac/branch/develop?svg=true)](https://ci.appveyor.com/project/forcedotcom/salesforcedx-vscode/branch/develop)
+[![CircleCI](https://circleci.com/gh/forcedotcom/salesforcedx-vscode.svg?style=svg)](https://circleci.com/gh/forcedotcom/salesforcedx-vscode)
 [![Dev Dependencies](https://david-dm.org/forcedotcom/salesforcedx-vscode/dev-status.svg)](contributing/dependencies.md)
 [![codecov](https://codecov.io/gh/forcedotcom/salesforcedx-vscode/branch/develop/graph/badge.svg)](https://codecov.io/gh/forcedotcom/salesforcedx-vscode)
+[![Commitizen friendly](https://img.shields.io/badge/commitizen-friendly-brightgreen.svg)](http://commitizen.github.io/cz-cli/)
 
 ## Introduction
 
@@ -24,6 +25,8 @@ Currently, we have the following extensions:
    This extension supports Aura component bundles. It uses the HTML language server from VS Code.
 - [salesforcedx-vscode-visualforce](https://marketplace.visualstudio.com/items?itemName=salesforce.salesforcedx-vscode-visualforce)  
    This extension supports Visualforce pages and components. It uses the HTML language server from VS Code.
+- [salesforcedx-vscode-soql](https://marketplace.visualstudio.com/items?itemName=salesforce.salesforcedx-vscode-soql)  
+   This extension enables you to interactively build a SOQL query via a form-based visual editor, view the query as you build, and save the output to a .csv or .json file.
 
 ## Be an Efficient Salesforce Developer with VS Code
 

@@ -13,6 +13,7 @@ import {
   LanguageClient,
   LanguageClientOptions
 } from 'vscode-languageclient';
+import { LSP_ERR } from './constants';
 import { nls } from './messages';
 import * as requirements from './requirements';
 import { telemetryService } from './telemetry';
@@ -34,30 +35,37 @@ async function createServer(
     const javaExecutable = path.resolve(
       `${requirementsData.java_home}/bin/java`
     );
-    let args: string[];
+    const jvmMaxHeap = requirementsData.java_memory;
     const enableSemanticErrors: boolean = vscode.workspace
       .getConfiguration()
       .get<boolean>('salesforcedx-vscode-apex.enable-semantic-errors', false);
+    const enableCompletionStatistics: boolean = vscode.workspace
+      .getConfiguration()
+      .get<boolean>(
+        'salesforcedx-vscode-apex.advanced.enable-completion-statistics',
+        false
+      );
+
+    const args: string[] = [
+      '-cp',
+      uberJar,
+      '-Ddebug.internal.errors=true',
+      `-Ddebug.semantic.errors=${enableSemanticErrors}`,
+      `-Ddebug.completion.statistics=${enableCompletionStatistics}`
+    ];
+
+    if (jvmMaxHeap) {
+      args.push(`-Xmx${jvmMaxHeap}M`);
+    }
 
     if (DEBUG) {
-      args = ['-cp', uberJar];
-
       args.push(
-        '-Ddebug.internal.errors=true',
-        `-Ddebug.semantic.errors=${enableSemanticErrors}`,
         '-Dtrace.protocol=false',
-        `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${JDWP_DEBUG_PORT},quiet=y`,
-        APEX_LANGUAGE_SERVER_MAIN
-      );
-    } else {
-      args = ['-cp', uberJar];
-
-      args.push(
-        '-Ddebug.internal.errors=true',
-        `-Ddebug.semantic.errors=${enableSemanticErrors}`,
-        APEX_LANGUAGE_SERVER_MAIN
+        `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${JDWP_DEBUG_PORT},quiet=y`
       );
     }
+
+    args.push(APEX_LANGUAGE_SERVER_MAIN);
 
     return {
       options: {
@@ -69,7 +77,7 @@ async function createServer(
     };
   } catch (err) {
     vscode.window.showErrorMessage(err);
-    telemetryService.sendApexLSPError(err);
+    telemetryService.sendException(LSP_ERR, err.error);
     throw err;
   }
 }
@@ -149,7 +157,7 @@ export async function createLanguageServer(
   );
 
   client.onTelemetry(data =>
-    telemetryService.sendApexLSPLog(data.properties, data.measures)
+    telemetryService.sendEventData('apexLSPLog', data.properties, data.measures)
   );
 
   return client;

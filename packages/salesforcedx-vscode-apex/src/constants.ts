@@ -7,6 +7,7 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { nls } from './messages';
 
 export const DEBUGGER_LINE_BREAKPOINTS = 'debugger/lineBreakpoints';
 export const DEBUGGER_EXCEPTION_BREAKPOINTS = 'debugger/exceptionBreakpoints';
@@ -92,5 +93,5 @@ export const APEX_GROUP_RANGE = new vscode.Range(startPos, endPos);
 export const SET_JAVA_DOC_LINK =
   'https://forcedotcom.github.io/salesforcedx-vscode/articles/getting-started/java-setup';
 export const SFDX_APEX_CONFIGURATION_NAME = 'salesforcedx-vscode-apex';
-export const ENABLE_SOBJECT_REFRESH_ON_STARTUP =
-  'enable-sobject-refresh-on-startup';
+export const APEX_EXTENSION_NAME = 'salesforcedx-vscode-apex';
+export const LSP_ERR = 'apexLSPError';

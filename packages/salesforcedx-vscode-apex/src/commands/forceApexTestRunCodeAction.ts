@@ -4,51 +4,171 @@
  * Licensed under the BSD 3-Clause license.
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
-
+import {
+  HumanReporter,
+  TestItem,
+  TestLevel,
+  TestResult,
+  TestService
+} from '@salesforce/apex-node';
+import { SfdxProject } from '@salesforce/core';
+import { getRootWorkspacePath } from '@salesforce/salesforcedx-utils-vscode/out/src';
+import {
+  EmptyParametersGatherer,
+  LibraryCommandletExecutor,
+  SfdxCommandlet,
+  SfdxCommandletExecutor,
+  SfdxWorkspaceChecker
+} from '@salesforce/salesforcedx-utils-vscode/out/src';
 import {
   Command,
   SfdxCommandBuilder,
   TestRunner
 } from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
+import { notificationService } from '@salesforce/salesforcedx-utils-vscode/out/src/commands';
+import {
+  ComponentSet,
+  SourceComponent
+} from '@salesforce/source-deploy-retrieve';
 import * as vscode from 'vscode';
+import { channelService, OUTPUT_CHANNEL } from '../channels';
+import { workspaceContext } from '../context';
 import { nls } from '../messages';
+import * as settings from '../settings';
 import { forceApexTestRunCacheService, isEmpty } from '../testRunCache';
 
-const sfdxCoreExports = vscode.extensions.getExtension(
-  'salesforce.salesforcedx-vscode-core'
-)!.exports;
-const EmptyParametersGatherer = sfdxCoreExports.EmptyParametersGatherer;
-const sfdxCoreSettings = sfdxCoreExports.sfdxCoreSettings;
-const SfdxCommandlet = sfdxCoreExports.SfdxCommandlet;
-const SfdxWorkspaceChecker = sfdxCoreExports.SfdxWorkspaceChecker;
-const SfdxCommandletExecutor = sfdxCoreExports.SfdxCommandletExecutor;
-const notificationService = sfdxCoreExports.notificationService;
+export class ApexLibraryTestRunExecutor extends LibraryCommandletExecutor<{}> {
+  private tests: string[];
+  private codeCoverage: boolean = false;
+  private outputDir: string;
+
+  public static diagnostics = vscode.languages.createDiagnosticCollection(
+    'apex-errors'
+  );
+
+  constructor(
+    tests: string[],
+    outputDir = getTempFolder(),
+    codeCoverage = settings.retrieveTestCodeCoverage()
+  ) {
+    super(
+      nls.localize('force_apex_test_run_text'),
+      'force_apex_test_run_code_action_library',
+      OUTPUT_CHANNEL
+    );
+    this.tests = tests;
+    this.outputDir = outputDir;
+    this.codeCoverage = codeCoverage;
+  }
+
+  private buildTestItem(testNames: string[]): TestItem[] {
+    const tItems = testNames.map(item => {
+      if (item.indexOf('.') > 0) {
+        const splitItemData = item.split('.');
+        return {
+          className: splitItemData[0],
+          testMethods: [splitItemData[1]]
+        } as TestItem;
+      }
+
+      return { className: item } as TestItem;
+    });
+    return tItems;
+  }
+
+  public async run(): Promise<boolean> {
+    const connection = await workspaceContext.getConnection();
+    const testService = new TestService(connection);
+    const payload = await testService.buildAsyncPayload(
+      TestLevel.RunSpecifiedTests,
+      this.tests.join()
+    );
+    const result = await testService.runTestAsynchronous(
+      payload,
+      this.codeCoverage
+    );
+    await testService.writeResultFiles(
+      result,
+      { resultFormat: 'json', dirPath: this.outputDir },
+      this.codeCoverage
+    );
+    const humanOutput = new HumanReporter().format(result, this.codeCoverage);
+    channelService.appendLine(humanOutput);
+
+    await this.handleDiagnostics(result);
+    return result.summary.outcome === 'Passed';
+  }
+
+  private async handleDiagnostics(result: TestResult) {
+    ApexLibraryTestRunExecutor.diagnostics.clear();
+    const projectPath = getRootWorkspacePath();
+    const project = await SfdxProject.resolve(projectPath);
+    const defaultPackage = project.getDefaultPackage().fullPath;
+
+    result.tests.forEach(test => {
+      if (test.diagnostic) {
+        const diagnostic = test.diagnostic;
+        const components = ComponentSet.fromSource(defaultPackage);
+        const testClassCmp = components
+          .getSourceComponents({
+            fullName: test.apexClass.name,
+            type: 'ApexClass'
+          })
+          .next().value as SourceComponent;
+        const componentPath = testClassCmp.content;
+
+        const vscDiagnostic: vscode.Diagnostic = {
+          message: `${diagnostic.exceptionMessage}\n${diagnostic.exceptionStackTrace}`,
+          severity: vscode.DiagnosticSeverity.Error,
+          source: componentPath,
+          range: this.getZeroBasedRange(
+            diagnostic.lineNumber ?? 1,
+            diagnostic.columnNumber ?? 1
+          )
+        };
+
+        if (componentPath) {
+          ApexLibraryTestRunExecutor.diagnostics.set(
+            vscode.Uri.file(componentPath),
+            [vscDiagnostic]
+          );
+        }
+      }
+    });
+  }
+
+  private getZeroBasedRange(line: number, column: number): vscode.Range {
+    const pos = new vscode.Position(
+      line > 0 ? line - 1 : 0,
+      column > 0 ? column - 1 : 0
+    );
+    return new vscode.Range(pos, pos);
+  }
+}
 
 // build force:apex:test:run w/ given test class or test method
 export class ForceApexTestRunCodeActionExecutor extends SfdxCommandletExecutor<{}> {
-  protected test: string;
+  protected tests: string;
   protected shouldGetCodeCoverage: boolean = false;
   protected builder: SfdxCommandBuilder = new SfdxCommandBuilder();
   private outputToJson: string;
 
   public constructor(
-    test: string,
-    shouldGetCodeCoverage: boolean,
-    outputToJson: string
+    tests: string[],
+    shouldGetCodeCoverage = settings.retrieveTestCodeCoverage(),
+    outputToJson = getTempFolder()
   ) {
-    super();
-    this.test = test || '';
+    super(OUTPUT_CHANNEL);
+    this.tests = tests.join(',') || '';
     this.shouldGetCodeCoverage = shouldGetCodeCoverage;
     this.outputToJson = outputToJson;
   }
 
   public build(data: {}): Command {
     this.builder = this.builder
-      .withDescription(
-        nls.localize('force_apex_test_run_codeAction_description_text')
-      )
+      .withDescription(nls.localize('force_apex_test_run_text'))
       .withArg('force:apex:test:run')
-      .withFlag('--tests', this.test)
+      .withFlag('--tests', this.tests)
       .withFlag('--resultformat', 'human')
       .withFlag('--outputdir', this.outputToJson)
       .withFlag('--loglevel', 'error')
@@ -62,13 +182,14 @@ export class ForceApexTestRunCodeActionExecutor extends SfdxCommandletExecutor<{
   }
 }
 
-async function forceApexTestRunCodeAction(test: string) {
-  const getCodeCoverage = sfdxCoreSettings.getRetrieveTestCodeCoverage();
-  const outputToJson = getTempFolder();
+async function forceApexTestRunCodeAction(tests: string[]) {
+  const testRunExecutor = settings.useApexLibrary()
+    ? new ApexLibraryTestRunExecutor(tests)
+    : new ForceApexTestRunCodeActionExecutor(tests);
   const commandlet = new SfdxCommandlet(
     new SfdxWorkspaceChecker(),
     new EmptyParametersGatherer(),
-    new ForceApexTestRunCodeActionExecutor(test, getCodeCoverage, outputToJson)
+    testRunExecutor
   );
   await commandlet.run();
 }
@@ -92,6 +213,14 @@ export async function forceApexTestClassRunCodeActionDelegate(
   testClass: string
 ) {
   vscode.commands.executeCommand('sfdx.force.apex.test.class.run', testClass);
+}
+
+export async function forceApexDebugClassRunCodeActionDelegate(
+  testClass: string
+) {
+  vscode.commands.executeCommand('sfdx.force.test.view.debugTests', {
+    name: testClass
+  });
 }
 
 // evaluate test class param: if not provided, apply cached value
@@ -122,7 +251,7 @@ export async function forceApexTestClassRunCodeAction(testClass: string) {
     return;
   }
 
-  await forceApexTestRunCodeAction(testClass);
+  await forceApexTestRunCodeAction([testClass]);
 }
 
 //   T E S T   M E T H O D
@@ -132,6 +261,13 @@ export async function forceApexTestMethodRunCodeActionDelegate(
   testMethod: string
 ) {
   vscode.commands.executeCommand('sfdx.force.apex.test.method.run', testMethod);
+}
+export async function forceApexDebugMethodRunCodeActionDelegate(
+  testMethod: string
+) {
+  vscode.commands.executeCommand('sfdx.force.test.view.debugSingleTest', {
+    name: testMethod
+  });
 }
 
 // evaluate test method param: if not provided, apply cached value
@@ -163,5 +299,5 @@ export async function forceApexTestMethodRunCodeAction(testMethod: string) {
     return;
   }
 
-  await forceApexTestRunCodeAction(testMethod);
+  await forceApexTestRunCodeAction([testMethod]);
 }

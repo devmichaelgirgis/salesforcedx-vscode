@@ -7,19 +7,28 @@
 import {
   CancelResponse,
   ContinueResponse,
-  DirFileNameSelection,
   LocalComponent,
   PostconditionChecker
 } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { GlobPattern, workspace } from 'vscode';
-import { GlobStrategy } from '.';
+import { channelService } from '../../channels';
+import {
+  ConflictDetectionConfig,
+  conflictDetector,
+  conflictView,
+  DirectoryDiffResults
+} from '../../conflict';
 import { nls } from '../../messages';
 import { notificationService } from '../../notifications';
+import { sfdxCoreSettings } from '../../settings';
+import { SfdxPackageDirectories } from '../../sfdxProject';
 import { telemetryService } from '../../telemetry';
-import { getRootWorkspacePath } from '../../util';
-import { MetadataDictionary } from '../../util/metadataDictionary';
+import {
+  getRootWorkspacePath,
+  MetadataDictionary,
+  OrgAuthInfo
+} from '../../util';
 import { PathStrategyFactory } from './sourcePathStrategies';
 
 type OneOrMany = LocalComponent | LocalComponent[];
@@ -30,48 +39,6 @@ export class EmptyPostChecker implements PostconditionChecker<any> {
     inputs: ContinueResponse<any> | CancelResponse
   ): Promise<ContinueResponse<any> | CancelResponse> {
     return inputs;
-  }
-}
-
-// TODO: Replace with ComponentOverwritePrompt in subsequent PR (W-6610854)
-export class FilePathExistsChecker
-  implements PostconditionChecker<DirFileNameSelection> {
-  private globStrategy: GlobStrategy;
-  private warningMessage: string;
-
-  public constructor(globStrategy: GlobStrategy, warningMessage: string) {
-    this.globStrategy = globStrategy;
-    this.warningMessage = warningMessage;
-  }
-
-  public async check(
-    inputs: ContinueResponse<DirFileNameSelection> | CancelResponse
-  ): Promise<ContinueResponse<DirFileNameSelection> | CancelResponse> {
-    if (inputs.type === 'CONTINUE') {
-      const globs = await this.globStrategy.globs(inputs.data);
-      if (!(await this.filesExist(globs)) || (await this.promptOverwrite())) {
-        return inputs;
-      }
-    }
-    return { type: 'CANCEL' };
-  }
-
-  private async filesExist(globs: GlobPattern[]): Promise<boolean> {
-    const files = [];
-    for (const g of globs) {
-      const result = await workspace.findFiles(g);
-      files.push(...result);
-    }
-    return files.length > 0;
-  }
-
-  private async promptOverwrite(): Promise<boolean> {
-    const overwrite = await notificationService.showWarningMessage(
-      this.warningMessage,
-      nls.localize('warning_prompt_continue_confirm'),
-      nls.localize('warning_prompt_overwrite_cancel')
-    );
-    return overwrite === nls.localize('warning_prompt_continue_confirm');
   }
 }
 
@@ -216,5 +183,129 @@ export class OverwriteComponentPrompt
       );
     }
     return choices;
+  }
+}
+
+export interface ConflictDetectionMessages {
+  warningMessageKey: string;
+  commandHint: (input: string) => string;
+}
+
+export class ConflictDetectionChecker implements PostconditionChecker<string> {
+  private messages: ConflictDetectionMessages;
+
+  public constructor(messages: ConflictDetectionMessages) {
+    this.messages = messages;
+  }
+
+  public async check(
+    inputs: ContinueResponse<string> | CancelResponse
+  ): Promise<ContinueResponse<string> | CancelResponse> {
+    if (!sfdxCoreSettings.getConflictDetectionEnabled()) {
+      return inputs;
+    }
+
+    if (inputs.type === 'CONTINUE') {
+      const usernameOrAlias = await this.getDefaultUsernameOrAlias();
+      if (!usernameOrAlias) {
+        return {
+          type: 'CANCEL',
+          msg: nls.localize('conflict_detect_no_default_username')
+        };
+      }
+
+      const defaultPackageDir = await SfdxPackageDirectories.getDefaultPackageDir();
+      if (!defaultPackageDir) {
+        return {
+          type: 'CANCEL',
+          msg: nls.localize('conflict_detect_no_default_package_dir')
+        };
+      }
+
+      const config: ConflictDetectionConfig = {
+        usernameOrAlias,
+        packageDir: defaultPackageDir,
+        manifest: inputs.data
+      };
+      const results = await conflictDetector.checkForConflicts(config);
+
+      return this.handleConflicts(
+        inputs.data,
+        usernameOrAlias,
+        defaultPackageDir,
+        results
+      );
+    }
+    return { type: 'CANCEL' };
+  }
+
+  public async handleConflicts(
+    manifest: string,
+    usernameOrAlias: string,
+    defaultPackageDir: string,
+    results: DirectoryDiffResults
+  ): Promise<ContinueResponse<string> | CancelResponse> {
+    const conflictTitle = nls.localize(
+      'conflict_detect_view_root',
+      usernameOrAlias,
+      results.different.size
+    );
+
+    if (results.different.size === 0) {
+      conflictDetector.clearCache(usernameOrAlias);
+      conflictView.visualizeDifferences(conflictTitle, usernameOrAlias, false);
+    } else {
+      channelService.appendLine(
+        nls.localize(
+          'conflict_detect_conflict_header',
+          results.different.size,
+          results.scannedRemote,
+          results.scannedLocal
+        )
+      );
+      results.different.forEach(file => {
+        channelService.appendLine(join(defaultPackageDir, file));
+      });
+      channelService.showChannelOutput();
+
+      const choice = await notificationService.showWarningModal(
+        nls.localize(this.messages.warningMessageKey),
+        nls.localize('conflict_detect_override'),
+        nls.localize('conflict_detect_show_conflicts')
+      );
+
+      if (choice === nls.localize('conflict_detect_override')) {
+        conflictDetector.clearCache(usernameOrAlias);
+        conflictView.visualizeDifferences(
+          conflictTitle,
+          usernameOrAlias,
+          false
+        );
+      } else {
+        channelService.appendLine(
+          nls.localize(
+            'conflict_detect_command_hint',
+            this.messages.commandHint(manifest)
+          )
+        );
+        channelService.showChannelOutput();
+
+        const doReveal =
+          choice === nls.localize('conflict_detect_show_conflicts');
+        conflictView.visualizeDifferences(
+          conflictTitle,
+          usernameOrAlias,
+          doReveal,
+          results
+        );
+
+        return { type: 'CANCEL' };
+      }
+    }
+    return { type: 'CONTINUE', data: manifest };
+  }
+
+  public async getDefaultUsernameOrAlias(): Promise<string | undefined> {
+    return await OrgAuthInfo.getDefaultUsernameOrAlias(true);
   }
 }

@@ -6,94 +6,86 @@
  */
 
 import {
-  Command,
-  SfdxCommandBuilder
-} from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
-import { DirFileNameSelection } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
+  DirFileNameSelection,
+  LocalComponent
+} from '@salesforce/salesforcedx-utils-vscode/src/types';
+import { LightningInterfaceOptions, TemplateType } from '@salesforce/templates';
 import { Uri } from 'vscode';
 import { nls } from '../../messages';
 import { sfdxCoreSettings } from '../../settings';
 import {
   CompositeParametersGatherer,
-  FilePathExistsChecker,
-  GlobStrategyFactory,
-  PathStrategyFactory,
+  MetadataTypeGatherer,
   SelectFileName,
   SelectOutputDir,
   SfdxCommandlet,
-  SfdxWorkspaceChecker,
-  SourcePathStrategy
+  SfdxWorkspaceChecker
 } from '../util';
-import { BaseTemplateCommand } from './baseTemplateCommand';
+import { OverwriteComponentPrompt } from '../util/postconditionCheckers';
 import {
   FileInternalPathGatherer,
   InternalDevWorkspaceChecker
 } from './internalCommandUtils';
+import { LibraryBaseTemplateCommand } from './libraryBaseTemplateCommand';
 import {
-  AURA_DEFINITION_FILE_EXTS,
   AURA_DIRECTORY,
-  AURA_INTERFACE_EXTENSION
+  AURA_INTERFACE_EXTENSION,
+  AURA_TYPE
 } from './metadataTypeConstants';
 
-export class ForceLightningInterfaceCreateExecutor extends BaseTemplateCommand {
-  public build(data: DirFileNameSelection): Command {
-    const builder = new SfdxCommandBuilder()
-      .withDescription(nls.localize('force_lightning_interface_create_text'))
-      .withArg('force:lightning:interface:create')
-      .withFlag('--interfacename', data.fileName)
-      .withFlag('--outputdir', data.outputdir)
-      .withLogName('force_lightning_interface_create');
-
-    if (sfdxCoreSettings.getInternalDev()) {
-      builder.withArg('--internal');
-    }
-
-    return builder.build();
+export class LibraryForceLightningInterfaceCreateExecutor extends LibraryBaseTemplateCommand<
+  DirFileNameSelection
+> {
+  public executionName = nls.localize('force_lightning_interface_create_text');
+  public telemetryName = 'force_lightning_interface_create';
+  public metadataTypeName = AURA_TYPE;
+  public templateType = TemplateType.LightningInterface;
+  public getOutputFileName(data: DirFileNameSelection) {
+    return data.fileName;
   }
-
-  public sourcePathStrategy: SourcePathStrategy = PathStrategyFactory.createBundleStrategy();
-
-  public getDefaultDirectory() {
-    return AURA_DIRECTORY;
-  }
-
   public getFileExtension() {
     return AURA_INTERFACE_EXTENSION;
+  }
+  public constructTemplateOptions(data: DirFileNameSelection) {
+    const internal = sfdxCoreSettings.getInternalDev();
+    const templateOptions: LightningInterfaceOptions = {
+      outputdir: data.outputdir,
+      interfacename: data.fileName,
+      template: 'DefaultLightningIntf',
+      internal
+    };
+    return templateOptions;
   }
 }
 
 const fileNameGatherer = new SelectFileName();
 const outputDirGatherer = new SelectOutputDir(AURA_DIRECTORY, true);
+const metadataTypeGatherer = new MetadataTypeGatherer(AURA_TYPE);
 
 export async function forceLightningInterfaceCreate() {
+  const createTemplateExecutor = new LibraryForceLightningInterfaceCreateExecutor();
   const commandlet = new SfdxCommandlet(
     new SfdxWorkspaceChecker(),
-    new CompositeParametersGatherer<DirFileNameSelection>(
+    new CompositeParametersGatherer<LocalComponent>(
+      metadataTypeGatherer,
       fileNameGatherer,
       outputDirGatherer
     ),
-    new ForceLightningInterfaceCreateExecutor(),
-    new FilePathExistsChecker(
-      GlobStrategyFactory.createCheckBundleInGivenPath(
-        ...AURA_DEFINITION_FILE_EXTS
-      ),
-      nls.localize(
-        'warning_prompt_file_overwrite',
-        nls.localize('aura_bundle_message_name')
-      )
-    )
+    createTemplateExecutor,
+    new OverwriteComponentPrompt()
   );
   await commandlet.run();
 }
 
 export async function forceInternalLightningInterfaceCreate(sourceUri: Uri) {
+  const createTemplateExecutor = new LibraryForceLightningInterfaceCreateExecutor();
   const commandlet = new SfdxCommandlet(
     new InternalDevWorkspaceChecker(),
     new CompositeParametersGatherer(
       fileNameGatherer,
       new FileInternalPathGatherer(sourceUri)
     ),
-    new ForceLightningInterfaceCreateExecutor()
+    createTemplateExecutor
   );
   await commandlet.run();
 }

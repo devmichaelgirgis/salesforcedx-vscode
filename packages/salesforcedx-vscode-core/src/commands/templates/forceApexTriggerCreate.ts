@@ -6,68 +6,63 @@
  */
 
 import {
-  Command,
-  SfdxCommandBuilder
-} from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
-import { DirFileNameSelection } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
+  DirFileNameSelection,
+  LocalComponent
+} from '@salesforce/salesforcedx-utils-vscode/src/types';
+import { ApexTriggerOptions, TemplateType } from '@salesforce/templates';
 import { nls } from '../../messages';
 import {
   CompositeParametersGatherer,
-  FilePathExistsChecker,
-  GlobStrategyFactory,
-  PathStrategyFactory,
+  MetadataTypeGatherer,
   SelectFileName,
   SelectOutputDir,
   SfdxCommandlet,
-  SfdxWorkspaceChecker,
-  SourcePathStrategy
+  SfdxWorkspaceChecker
 } from '../util';
-import { BaseTemplateCommand } from './baseTemplateCommand';
+import { OverwriteComponentPrompt } from '../util/postconditionCheckers';
+import { LibraryBaseTemplateCommand } from './libraryBaseTemplateCommand';
 import {
   APEX_TRIGGER_DIRECTORY,
-  APEX_TRIGGER_EXTENSION
+  APEX_TRIGGER_TYPE
 } from './metadataTypeConstants';
 
-export class ForceApexTriggerCreateExecutor extends BaseTemplateCommand {
-  public build(data: DirFileNameSelection): Command {
-    return new SfdxCommandBuilder()
-      .withDescription(nls.localize('force_apex_trigger_create_text'))
-      .withArg('force:apex:trigger:create')
-      .withFlag('--triggername', data.fileName)
-      .withFlag('--outputdir', data.outputdir)
-      .withLogName('force_apex_trigger_create')
-      .build();
+export class LibraryForceApexTriggerCreateExecutor extends LibraryBaseTemplateCommand<
+  DirFileNameSelection
+> {
+  public executionName = nls.localize('force_apex_trigger_create_text');
+  public telemetryName = 'force_apex_trigger_create';
+  public metadataTypeName = APEX_TRIGGER_TYPE;
+  public templateType = TemplateType.ApexTrigger;
+  public getOutputFileName(data: DirFileNameSelection) {
+    return data.fileName;
   }
-
-  public sourcePathStrategy: SourcePathStrategy = PathStrategyFactory.createDefaultStrategy();
-
-  public getDefaultDirectory() {
-    return APEX_TRIGGER_DIRECTORY;
-  }
-
-  public getFileExtension() {
-    return APEX_TRIGGER_EXTENSION;
+  public constructTemplateOptions(data: DirFileNameSelection) {
+    const templateOptions: ApexTriggerOptions = {
+      outputdir: data.outputdir,
+      triggername: data.fileName,
+      triggerevents: ['before insert'],
+      sobject: 'SOBJECT',
+      template: 'ApexTrigger'
+    };
+    return templateOptions;
   }
 }
 
 const fileNameGatherer = new SelectFileName();
 const outputDirGatherer = new SelectOutputDir(APEX_TRIGGER_DIRECTORY);
+const metadataTypeGatherer = new MetadataTypeGatherer(APEX_TRIGGER_TYPE);
 
 export async function forceApexTriggerCreate() {
+  const createTemplateExecutor = new LibraryForceApexTriggerCreateExecutor();
   const commandlet = new SfdxCommandlet(
     new SfdxWorkspaceChecker(),
-    new CompositeParametersGatherer<DirFileNameSelection>(
+    new CompositeParametersGatherer<LocalComponent>(
+      metadataTypeGatherer,
       fileNameGatherer,
       outputDirGatherer
     ),
-    new ForceApexTriggerCreateExecutor(),
-    new FilePathExistsChecker(
-      GlobStrategyFactory.createCheckFileInGivenPath(APEX_TRIGGER_EXTENSION),
-      nls.localize(
-        'warning_prompt_file_overwrite',
-        nls.localize('apex_trigger_message_name')
-      )
-    )
+    createTemplateExecutor,
+    new OverwriteComponentPrompt()
   );
   await commandlet.run();
 }

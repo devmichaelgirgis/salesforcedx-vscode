@@ -7,19 +7,85 @@ extensions through the .vsix files.
 
 # Goal
 
-The goal of publishing is to take the extensions under /packages, bundle them as
+The goal of publishing is to take the extensions under `/packages`, bundle them as
 .vsix files, and push them to the [Visual Studio Code
 Marketplace](https://marketplace.visualstudio.com/vscode).
 
-For more information about publishing take a look at
+For more information about publishing take a look at:
 
 - [Publishing VS Code Extensions][publish_vscode_ext]
 - [Managing
   Extensions](https://code.visualstudio.com/docs/editor/extension-gallery)
 
+# Prerequisites
+
+1. Publisher has a valid CircleCI token for the forcedotcom organization. See [Create a Personal API token](https://circleci.com/docs/2.0/managing-api-tokens/#creating-a-personal-api-token) in the CircleCI docs.
+1. Publisher is a part of the GitHub team 'PDT'.
+
 # Steps
 
-The scripts/publish.js contains the end-to-end flow. You run this from the
+## Creating a release branch
+
+The release branch is typically created from a scheduled job in CircleCI. This scheduled job creates the release branch off of the `develop` branch on Mondays at 7 PM PST. Release branches are in the format `release/vxx.yy.zz`.
+
+To create a release branch manually:
+
+<b>Note that this isn't typically required due to the scheduled job in CircleCI</b>
+
+1. Open the Command Palette (press Ctrl+Shift+P on Windows or Linux, or Cmd+Shift+P on macOS).
+1. Search for `Tasks: Run Task`.
+1. Select `Create Release Branch`.
+1. Approve the workflow in CircleCI:
+   1. Navigate to the `#pdt_releases` channel in Slack.
+   1. Soon you'll see a `Pending Approval for Creation of Release Branch` option. Click the `Visit Workflow` button to navigate to CircleCI.
+   1. Click the selection for `hold`.
+   1. Click the `Approve` button. See ![Approval View](./images/contributing-approval-button.png) for an example.
+
+## Generating the Change Log
+
+We generate the change log based off of the new commits that are being staged for production. The change log generator helps us automate the process of generating the `CHANGELOG.md` with the correct format and commits being staged.
+
+To run the change log generator:
+
+1. Run `git pull` to make sure your local changes are up to date.
+1. Open the Command Palette (press Ctrl+Shift+P on Windows or Linux, or Cmd+Shift+P on macOS).
+1. Search for `Tasks: Run Task`.
+1. Select `Create Change Log`.
+1. When prompted for the `Release Version` leave the value blank to let the script grab the latest release version for you. If you'd like to use a different value from the latest, this can be provided in this prompt manually.
+
+## Merging the Release Branch into Main
+
+After the change log has been approved and merged into your release branch, it's time to prepare main with the new changes for the publish. We currently use a CircleCI workflow that rebases `main` off of the release branch. We are specifically using the rebase strategy because we want all the commits from our release branch to be applied on top of the commits in main.
+
+To run the merge process:
+
+1. Open the Command Palette (press Ctrl+Shift+P on Windows or Linux, or Cmd+Shift+P on macOS).
+1. Search for `Tasks: Run Task`.
+1. Select `Launch Pre-Publish Steps`.
+1. Approve the workflow in CircleCI:
+   1. Navigate to the `#pdt_releases` channel in Slack.
+   1. Soon you'll see a `Pending Approval for merge of release branch into main` option. Click the `Visit Workflow` button to navigate to CircleCI.
+   1. Click the selection for `hold`.
+   1. Click the `Approve` button. See ![Approval View](./images/contributing-approval-button.png) for an example.
+
+## Publishing Main
+
+After the pre-publish steps have run and main has been rebased off of the release branch, it's now time to publish main.
+
+1. Open the Command Palette (press Ctrl+Shift+P on Windows or Linux, or Cmd+Shift+P on macOS).
+1. Search for `Tasks: Run Task`.
+1. Select `Publish Extensions`.
+1. Approve the workflow in CircleCI:
+   1. Navigate to the `#pdt_releases` channel in Slack.
+   1. Soon you'll see a `Pending Approval for Publish` option. Click the `Visit Workflow` button to navigate to CircleCI.
+   1. Click the selection for `hold`.
+   1. Click the `Approve` button. See ![Approval View](./images/contributing-approval-button.png) for an example.
+
+# Manual Publish
+
+In the event that CircleCI is not a viable option for publishing, see the following...
+
+The scripts/publish-circleci.js contains the end-to-end flow. You run this from the
 **top-level** directory.
 
 The files under scripts use [shelljs/shx](https://github.com/shelljs/shx) and
@@ -29,15 +95,18 @@ portable manner across platforms.
 1. `git checkout -t origin release/vxx.yy.zz`
 1. `npm install`
 1. `export SALESFORCEDX_VSCODE_VERSION=xx.yy.zz` (must match the branch version)
-1. `scripts/publish.js`
+1. `export CIRCLECI_TOKEN=zyx` (must be a CircleCI admin in order to generate it)
+1. `export CIRCLECI_BUILD=1234` (the build-all CircleCI build number)
+1. `scripts/publish-circleci.js`
 
 It is possible to run each step manually as illustrated below.
 
-## Packaging as .vsix
+## Downloading the .vsix from CircleCI
 
 ### Prerequisite
 
-- Lerna is properly installed (`npm install -g lerna@2.4.0`).
+- Lerna is properly installed (`npm install -g lerna@3.13.1`).
+- You've created a CircleCI token that grants you access to the artifacts generated per build. More info on CircleCI's doc [Create a Personal API token](https://circleci.com/docs/2.0/managing-api-tokens/#creating-a-personal-api-token).
 - All tests have been run prior to publishing. We don't run the tests during the
   publishing cycle since it generates artifacts that we do not want to include
   in the packaged extensions.
@@ -46,11 +115,11 @@ It is possible to run each step manually as illustrated below.
 
 1. `npm install` to install all the dependencies and to symlink interdependent
    local modules.
-1. `npm run compile` to compile all the TypeScript files.
-1. `lerna publish ...` (see scripts/publish.js for the full command) will
-   increment the version in the individual package.json to prepare for
-   publication. **This also commits the changes to git and adds a tag.**
-1. `npm run vscode:package` packages _each_ extension as a .vsix.
+1. You have set the `SALESFORCEDX_VSCODE_VERSION`, `CIRCLECI_TOKEN` and
+   `CIRCLECI_BUILD` environment variables that give you access to download the
+   CircleCI artifacts.
+1. `npm run circleci:artifacts` downloads _each_ extension artifact as a .vsix
+   and stores it in the corresponding packages/salesforcedx-vscode-\* path.
 
 **At this stage, it is possible to share the .vsix directly for manual
 installation.**
@@ -103,7 +172,7 @@ $ vsce login (publisher name)
 It's **crucial** that you publish the .vsix that you had before so that the
 SHA256 match. If you were to repackage, the SHA256 would be different.
 
-## Merging back from the release branch into develop and master
+## Merging back from the release branch into develop and main
 
 ### Prerequisite
 
@@ -115,8 +184,7 @@ See this
 [guide](https://www.atlassian.com/git/tutorials/comparing-workflows#gitflow-workflow)
 from Atlassian on the flow. These steps are manual because you might encounter merge conflicts.
 
-1. `git push --tags` to push the tags to GitHub.
-1. `git checkout master`
+1. `git checkout main`
 1. `git pull` to get the latest changes (there shouldn't be any since you are
    the person releasing).
 1. `git merge release/vxx.y.z`

@@ -5,6 +5,11 @@
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
 import {
+  Measurements,
+  Properties,
+  TelemetryData
+} from '@salesforce/salesforcedx-utils-vscode/out/src';
+import {
   CliCommandExecutor,
   Command,
   CommandExecution
@@ -20,7 +25,7 @@ import { EmptyPostChecker } from '.';
 import { channelService } from '../../channels';
 import { notificationService, ProgressNotification } from '../../notifications';
 import { taskViewService } from '../../statuses';
-import { TelemetryData, telemetryService } from '../../telemetry';
+import { telemetryService } from '../../telemetry';
 import { getRootWorkspacePath } from '../../util';
 
 export interface FlagParameter<T> {
@@ -29,11 +34,18 @@ export interface FlagParameter<T> {
 
 export interface CommandletExecutor<T> {
   execute(response: ContinueResponse<T>): void;
+  readonly onDidFinishExecution?: vscode.Event<[number, number]>;
 }
 
 export abstract class SfdxCommandletExecutor<T>
   implements CommandletExecutor<T> {
   protected showChannelOutput = true;
+  protected executionCwd = getRootWorkspacePath();
+  protected onDidFinishExecutionEventEmitter = new vscode.EventEmitter<
+    [number, number]
+  >();
+  public readonly onDidFinishExecution: vscode.Event<[number, number]> = this
+    .onDidFinishExecutionEventEmitter.event;
 
   protected attachExecution(
     execution: CommandExecution,
@@ -56,10 +68,16 @@ export abstract class SfdxCommandletExecutor<T>
 
   public logMetric(
     logName: string | undefined,
-    executionTime: [number, number],
-    additionalData?: any
+    hrstart: [number, number],
+    properties?: Properties,
+    measurements?: Measurements
   ) {
-    telemetryService.sendCommandEvent(logName, executionTime, additionalData);
+    telemetryService.sendCommandEvent(
+      logName,
+      hrstart,
+      properties,
+      measurements
+    );
   }
 
   public execute(response: ContinueResponse<T>): void {
@@ -67,7 +85,7 @@ export abstract class SfdxCommandletExecutor<T>
     const cancellationTokenSource = new vscode.CancellationTokenSource();
     const cancellationToken = cancellationTokenSource.token;
     const execution = new CliCommandExecutor(this.build(response.data), {
-      cwd: getRootWorkspacePath(),
+      cwd: this.executionCwd,
       env: { SFDX_JSON_TO_STDOUT: 'true' }
     }).execute(cancellationToken);
 
@@ -83,10 +101,18 @@ export abstract class SfdxCommandletExecutor<T>
         output
       );
       let properties;
+      let measurements;
       if (telemetryData) {
         properties = telemetryData.properties;
+        measurements = telemetryData.measurements;
       }
-      this.logMetric(execution.command.logName, startTime, properties);
+      this.logMetric(
+        execution.command.logName,
+        startTime,
+        properties,
+        measurements
+      );
+      this.onDidFinishExecutionEventEmitter.fire(startTime);
     });
     this.attachExecution(execution, cancellationTokenSource, cancellationToken);
   }
@@ -107,6 +133,7 @@ export class SfdxCommandlet<T> {
   private readonly postchecker: PostconditionChecker<T>;
   private readonly gatherer: ParametersGatherer<T>;
   private readonly executor: CommandletExecutor<T>;
+  public readonly onDidFinishExecution?: vscode.Event<[number, number]>;
 
   constructor(
     checker: PreconditionChecker,
@@ -118,6 +145,9 @@ export class SfdxCommandlet<T> {
     this.gatherer = gatherer;
     this.executor = executor;
     this.postchecker = postchecker;
+    if (this.executor.onDidFinishExecution) {
+      this.onDidFinishExecution = this.executor.onDidFinishExecution;
+    }
   }
 
   public async run(): Promise<void> {

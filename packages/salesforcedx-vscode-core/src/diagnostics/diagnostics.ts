@@ -4,10 +4,20 @@
  * Licensed under the BSD 3-Clause license.
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
-
 import { ForceSourceDeployErrorResponse } from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
+import { SourceDeployResult } from '@salesforce/source-deploy-retrieve';
 import * as path from 'path';
 import * as vscode from 'vscode';
+
+export function getRange(
+  lineNumber: string,
+  columnNumber: string
+): vscode.Range {
+  const ln = Number(lineNumber);
+  const col = Number(columnNumber);
+  const pos = new vscode.Position(ln > 0 ? ln - 1 : 0, col > 0 ? col - 1 : 0);
+  return new vscode.Range(pos, pos);
+}
 
 export function handleDiagnosticErrors(
   errors: ForceSourceDeployErrorResponse,
@@ -70,12 +80,52 @@ export function handleDiagnosticErrors(
   return errorCollection;
 }
 
-export function getRange(
-  lineNumber: string,
-  columnNumber: string
-): vscode.Range {
-  const ln = Number(lineNumber);
-  const col = Number(columnNumber);
-  const pos = new vscode.Position(ln > 0 ? ln - 1 : 0, col > 0 ? col - 1 : 0);
-  return new vscode.Range(pos, pos);
+export function handleDeployRetrieveLibraryDiagnostics(
+  deployResult: SourceDeployResult,
+  errorCollection: vscode.DiagnosticCollection
+): vscode.DiagnosticCollection {
+  errorCollection.clear();
+
+  const diagnosticMap: Map<string, vscode.Diagnostic[]> = new Map();
+
+  if (deployResult.components) {
+    for (const deployment of deployResult.components) {
+      for (const diagnostic of deployment.diagnostics) {
+        const {
+          message,
+          lineNumber,
+          columnNumber,
+          type,
+          filePath
+        } = diagnostic;
+        const range = getRange(
+          lineNumber ? lineNumber.toString() : '1',
+          columnNumber ? columnNumber.toString() : '1'
+        );
+        const severity =
+          type === 'Error'
+            ? vscode.DiagnosticSeverity.Error
+            : vscode.DiagnosticSeverity.Warning;
+        const vscDiagnostic: vscode.Diagnostic = {
+          message,
+          range,
+          severity,
+          source: filePath
+        };
+
+        if (filePath) {
+          if (!diagnosticMap.has(filePath)) {
+            diagnosticMap.set(filePath, []);
+          }
+          diagnosticMap.get(filePath)!.push(vscDiagnostic);
+        }
+      }
+    }
+  }
+
+  diagnosticMap.forEach((diagnostics, file) =>
+    errorCollection.set(vscode.Uri.file(file), diagnostics)
+  );
+
+  return errorCollection;
 }

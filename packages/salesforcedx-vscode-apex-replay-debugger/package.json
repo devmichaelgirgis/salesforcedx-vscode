@@ -14,35 +14,40 @@
     "color": "#ECECEC",
     "theme": "light"
   },
-  "version": "47.2.0",
+  "version": "51.3.0",
   "publisher": "salesforce",
   "license": "BSD-3-Clause",
   "engines": {
-    "vscode": "^1.32.0"
+    "vscode": "^1.49.3"
   },
   "categories": [
     "Debuggers"
   ],
   "dependencies": {
-    "@salesforce/salesforcedx-apex-replay-debugger": "47.2.0",
+    "@salesforce/apex-node": "0.1.15",
+    "@salesforce/core": "2.13.0",
+    "@salesforce/salesforcedx-apex-replay-debugger": "51.3.0",
+    "@salesforce/salesforcedx-utils-vscode": "51.3.0",
     "async-lock": "1.0.0",
     "path-exists": "3.0.0",
     "request-light": "0.2.4",
     "vscode-extension-telemetry": "0.0.17"
   },
   "devDependencies": {
-    "@salesforce/salesforcedx-test-utils-vscode": "47.2.0",
+    "@salesforce/salesforcedx-test-utils-vscode": "51.3.0",
+    "@salesforce/ts-sinon": "1.2.2",
     "@types/async-lock": "0.0.20",
     "@types/chai": "^4.0.0",
-    "@types/mocha": "2.2.38",
-    "@types/node": "8.9.3",
+    "@types/mkdirp": "0.5.2",
+    "@types/mocha": "^5",
+    "@types/node": "12.0.12",
     "@types/path-exists": "^1.0.29",
     "@types/sinon": "^2.3.2",
+    "@types/vscode": "1.49.0",
     "chai": "^4.0.2",
     "cross-env": "5.2.0",
-    "mocha": "3.2.0",
-    "sinon": "^2.3.6",
-    "vscode": "1.1.17"
+    "mocha": "^5",
+    "sinon": "^7.3.1"
   },
   "extensionDependencies": [
     "salesforce.salesforcedx-vscode-apex",
@@ -57,9 +62,8 @@
     "lint": "tslint --project .",
     "watch": "tsc -watch -p .",
     "clean": "shx rm -rf node_modules && shx rm -rf out && shx rm -rf coverage && shx rm -rf .nyc_output",
-    "postinstall": "node ./node_modules/vscode/bin/install",
     "test": "npm run test:vscode-integration",
-    "test:vscode-integration": "node ../../scripts/run-vscode-integration-tests",
+    "test:vscode-integration": "node ../../scripts/run-vscode-integration-tests-with-top-level-extensions",
     "test:vscode-insiders-integration": "cross-env CODE_VERSION=insiders npm run test:vscode-integration"
   },
   "activationEvents": [
@@ -111,6 +115,14 @@
         {
           "command": "sfdx.launch.replay.debugger.last.logfile",
           "when": "sfdx:project_opened && !inDebugMode"
+        },
+        {
+          "command": "sfdx.force.test.view.debugTests",
+          "when": "false"
+        },
+        {
+          "command": "sfdx.force.test.view.debugSingleTest",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -118,6 +130,18 @@
           "command": "sfdx.create.checkpoints",
           "when": "view == sfdx.force.view.checkpoint && sfdx:project_opened",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "sfdx.force.test.view.debugTests",
+          "when": "view == sfdx.force.test.view && viewItem =~ /apexTestGroup/",
+          "group": "inline"
+        },
+        {
+          "command": "sfdx.force.test.view.debugSingleTest",
+          "when": "view == sfdx.force.test.view && viewItem =~ /(apexTest)(_.*|\\b)/",
+          "group": "inline"
         }
       ],
       "editor/context": [
@@ -154,6 +178,22 @@
       {
         "command": "sfdx.launch.replay.debugger.last.logfile",
         "title": "%launch_from_last_log_file%"
+      },
+      {
+        "command": "sfdx.force.test.view.debugTests",
+        "title": "%run_tests_and_debug%",
+        "icon": {
+          "light": "resources/light/debug.svg",
+          "dark": "resources/dark/debug.svg"
+        }
+      },
+      {
+        "command": "sfdx.force.test.view.debugSingleTest",
+        "title": "%run_single_test_and_debug%",
+        "icon": {
+          "light": "resources/light/debug.svg",
+          "dark": "resources/dark/debug.svg"
+        }
       }
     ],
     "views": {

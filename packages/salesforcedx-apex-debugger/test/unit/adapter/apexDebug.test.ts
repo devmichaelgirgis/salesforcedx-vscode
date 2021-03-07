@@ -11,8 +11,8 @@ import {
   ForceOrgDisplay,
   OrgInfo
 } from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
-import { DEFAULT_CONNECTION_TIMEOUT_MS } from '@salesforce/salesforcedx-utils-vscode/out/src/index';
 import { RequestService } from '@salesforce/salesforcedx-utils-vscode/out/src/requestService';
+import { DEFAULT_CONNECTION_TIMEOUT_MS } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
 import * as AsyncLock from 'async-lock';
 import { expect } from 'chai';
 import * as sinon from 'sinon';
@@ -1568,6 +1568,7 @@ describe('Interactive debugger adapter - unit', () => {
 
   describe('Logging', () => {
     let breakpointService: BreakpointService;
+    let response: DebugProtocol.Response;
     const lineNumberMapping: Map<
       string,
       LineBreakpointsInTyperef[]
@@ -1587,6 +1588,13 @@ describe('Interactive debugger adapter - unit', () => {
 
     beforeEach(() => {
       adapter = new ApexDebugForTest(new RequestService());
+      response = {
+        command: '',
+        success: true,
+        request_seq: 0,
+        seq: 0,
+        type: 'response'
+      };
       breakpointService = adapter.getBreakpointService();
       breakpointService.setValidLines(lineNumberMapping, typerefMapping);
     });
@@ -1595,6 +1603,13 @@ describe('Interactive debugger adapter - unit', () => {
       adapter.tryToParseSfdxError({} as DebugProtocol.Response);
 
       expect(adapter.getEvents().length).to.equal(0);
+    });
+
+    it('Should not log error without an error message', () => {
+      adapter.tryToParseSfdxError(response, {});
+      expect(response.message).to.equal(
+        nls.localize('unexpected_error_help_text')
+      );
     });
 
     it('Should error to console with unexpected error schema', () => {
@@ -1645,11 +1660,7 @@ describe('Interactive debugger adapter - unit', () => {
       expect(adapter.getEvents()[0].event).to.equal('output');
       const outputEvent = adapter.getEvents()[0] as DebugProtocol.OutputEvent;
       expect(outputEvent.body.output).to.have.string(
-        `${msg.event.createdDate} | ${msg.sobject.Type} | Request: ${
-          msg.sobject.RequestId
-        } | Breakpoint: ${msg.sobject.BreakpointId} | Line: ${
-          msg.sobject.Line
-        } | ${msg.sobject.Description} |${os.EOL}${msg.sobject.Stacktrace}`
+        `${msg.event.createdDate} | ${msg.sobject.Type} | Request: ${msg.sobject.RequestId} | Breakpoint: ${msg.sobject.BreakpointId} | Line: ${msg.sobject.Line} | ${msg.sobject.Description} |${os.EOL}${msg.sobject.Stacktrace}`
       );
       expect(outputEvent.body.source!.path).to.equal(Uri.parse(fooUri).fsPath);
       expect(outputEvent.body.line).to.equal(4);

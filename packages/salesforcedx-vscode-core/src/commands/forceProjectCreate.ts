@@ -6,34 +6,30 @@
  */
 
 import {
-  CliCommandExecutor,
-  Command,
-  SfdxCommandBuilder
-} from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
-import {
   CancelResponse,
   ContinueResponse,
   ParametersGatherer,
   PostconditionChecker
 } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
+import { ProjectOptions, TemplateType } from '@salesforce/templates';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Observable } from 'rxjs/Observable';
 import * as vscode from 'vscode';
-import { channelService } from '../channels';
 import { nls } from '../messages';
-import { notificationService, ProgressNotification } from '../notifications';
-import { taskViewService } from '../statuses';
+import { notificationService } from '../notifications';
+import { sfdxCoreSettings } from '../settings';
+import { LibraryBaseTemplateCommand } from './templates/libraryBaseTemplateCommand';
 import {
   CompositeParametersGatherer,
   EmptyPreChecker,
-  SfdxCommandlet,
-  SfdxCommandletExecutor
+  SfdxCommandlet
 } from './util';
 
 export enum projectTemplateEnum {
   standard = 'standard',
-  empty = 'empty'
+  empty = 'empty',
+  analytics = 'analytics',
+  functions = 'functions'
 }
 
 type forceProjectCreateOptions = {
@@ -44,12 +40,12 @@ export class ProjectTemplateItem implements vscode.QuickPickItem {
   public label: string;
   public description: string;
   constructor(name: string, description: string) {
-    this.label = name;
+    this.label = nls.localize(name);
     this.description = nls.localize(description);
   }
 }
 
-export class ForceProjectCreateExecutor extends SfdxCommandletExecutor<
+export class LibraryForceProjectCreateExecutor extends LibraryBaseTemplateCommand<
   ProjectNameAndPathAndTemplate
 > {
   private readonly options: forceProjectCreateOptions;
@@ -59,52 +55,34 @@ export class ForceProjectCreateExecutor extends SfdxCommandletExecutor<
     this.options = options;
   }
 
-  public build(data: ProjectNameAndPathAndTemplate): Command {
-    const builder = new SfdxCommandBuilder()
-      .withDescription(nls.localize('force_project_create_text'))
-      .withArg('force:project:create')
-      .withFlag('--projectname', data.projectName)
-      .withFlag('--outputdir', data.projectUri)
-      .withFlag('--template', data.projectTemplate)
-      .withLogName('force_project_create');
-
-    if (this.options.isProjectWithManifest) {
-      builder.withArg('--manifest');
-    }
-
-    return builder.build();
+  public executionName = nls.localize('force_project_create_text');
+  public telemetryName = 'force_project_create';
+  public templateType = TemplateType.Project;
+  public getOutputFileName(data: ProjectNameAndPathAndTemplate) {
+    return data.projectName;
+  }
+  protected async openCreatedTemplateInVSCode(
+    outputdir: string,
+    fileName: string
+  ) {
+    await vscode.commands.executeCommand(
+      'vscode.openFolder',
+      vscode.Uri.file(path.join(outputdir, fileName))
+    );
   }
 
-  public execute(
-    response: ContinueResponse<ProjectNameAndPathAndTemplate>
-  ): void {
-    const startTime = process.hrtime();
-    const cancellationTokenSource = new vscode.CancellationTokenSource();
-    const cancellationToken = cancellationTokenSource.token;
-
-    const execution = new CliCommandExecutor(this.build(response.data), {
-      cwd: response.data.projectUri
-    }).execute(cancellationToken);
-
-    execution.processExitSubject.subscribe(async data => {
-      this.logMetric(execution.command.logName, startTime);
-      if (data !== undefined && data.toString() === '0') {
-        await vscode.commands.executeCommand(
-          'vscode.openFolder',
-          vscode.Uri.file(
-            path.join(response.data.projectUri, response.data.projectName)
-          )
-        );
-      }
-    });
-
-    notificationService.reportExecutionError(
-      execution.command.toString(),
-      (execution.stderrSubject as any) as Observable<Error | undefined>
-    );
-    channelService.streamCommandOutput(execution);
-    ProgressNotification.show(execution, cancellationTokenSource);
-    taskViewService.addCommandExecution(execution, cancellationTokenSource);
+  public constructTemplateOptions(data: ProjectNameAndPathAndTemplate) {
+    const templateOptions: ProjectOptions = {
+      projectname: data.projectName,
+      template: data.projectTemplate as ProjectOptions['template'],
+      outputdir: data.projectUri,
+      ns: '',
+      loginurl: 'https://login.salesforce.com',
+      defaultpackagedir: 'force-app',
+      manifest: this.options.isProjectWithManifest
+    };
+    this.telemetryProperties = { projectTemplate: data.projectTemplate };
+    return templateOptions;
   }
 }
 
@@ -137,17 +115,45 @@ export class SelectProjectTemplate
   > {
     const items: vscode.QuickPickItem[] = [
       new ProjectTemplateItem(
-        projectTemplateEnum.standard,
+        'force_project_create_standard_template_display_text',
         'force_project_create_standard_template'
       ),
       new ProjectTemplateItem(
-        projectTemplateEnum.empty,
+        'force_project_create_empty_template_display_text',
         'force_project_create_empty_template'
+      ),
+      new ProjectTemplateItem(
+        'force_project_create_analytics_template_display_text',
+        'force_project_create_analytics_template'
       )
     ];
+    if (sfdxCoreSettings.getFunctionsEnabled()) {
+      items.push(
+        new ProjectTemplateItem(
+          'force_project_create_functions_template_display_text',
+          'force_project_create_functions_template'
+        )
+      );
+    }
 
     const selection = await vscode.window.showQuickPick(items);
-    const projectTemplate = selection && selection.label;
+    let projectTemplate: string | undefined;
+    switch (selection && selection.label) {
+      case nls.localize('force_project_create_standard_template_display_text'):
+        projectTemplate = projectTemplateEnum.standard;
+        break;
+      case nls.localize('force_project_create_empty_template_display_text'):
+        projectTemplate = projectTemplateEnum.empty;
+        break;
+      case nls.localize('force_project_create_analytics_template_display_text'):
+        projectTemplate = projectTemplateEnum.analytics;
+        break;
+      case nls.localize('force_project_create_functions_template_display_text'):
+        projectTemplate = projectTemplateEnum.functions;
+        break;
+      default:
+        break;
+    }
     return projectTemplate
       ? { type: 'CONTINUE', data: { projectTemplate } }
       : { type: 'CANCEL' };
@@ -228,22 +234,26 @@ const parameterGatherer = new CompositeParametersGatherer(
 );
 const pathExistsChecker = new PathExistsChecker();
 
-const sfdxProjectCreateCommandlet = new SfdxCommandlet(
-  workspaceChecker,
-  parameterGatherer,
-  new ForceProjectCreateExecutor(),
-  pathExistsChecker
-);
 export async function forceSfdxProjectCreate() {
+  const createTemplateExecutor = new LibraryForceProjectCreateExecutor();
+  const sfdxProjectCreateCommandlet = new SfdxCommandlet(
+    workspaceChecker,
+    parameterGatherer,
+    createTemplateExecutor,
+    pathExistsChecker
+  );
   await sfdxProjectCreateCommandlet.run();
 }
 
-const projectWithManifestCreateCommandlet = new SfdxCommandlet(
-  workspaceChecker,
-  parameterGatherer,
-  new ForceProjectCreateExecutor({ isProjectWithManifest: true }),
-  pathExistsChecker
-);
 export async function forceProjectWithManifestCreate() {
+  const createTemplateExecutor = new LibraryForceProjectCreateExecutor({
+    isProjectWithManifest: true
+  });
+  const projectWithManifestCreateCommandlet = new SfdxCommandlet(
+    workspaceChecker,
+    parameterGatherer,
+    createTemplateExecutor,
+    pathExistsChecker
+  );
   await projectWithManifestCreateCommandlet.run();
 }

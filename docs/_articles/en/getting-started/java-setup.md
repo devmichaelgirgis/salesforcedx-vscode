@@ -27,6 +27,8 @@ Inside Visual Studio Code, you will need to set the `salesforcedx-vscode-apex.ja
 
 MacOS:
 
+For Mac OS X 10.5 or later, run `/usr/libexec/java_home` in your Terminal to get the default JDK location. To find all installed JDKs, use `/usr/libexec/java_home -V`.
+
 ```json
 {
   "salesforcedx-vscode-apex.java.home": "/Library/Java/JavaVirtualMachines/adoptopenjdk-11.jdk/Contents/Home"
@@ -38,6 +40,14 @@ Windows:
 ```json
 {
   "salesforcedx-vscode-apex.java.home": "C:\\Program Files\\AdoptOpenJDK\\jdk-11.0.3.7-hotspot"
+}
+```
+
+Linux (Pop! OS 20.04, installation via aptitude):
+
+```json
+{
+  "salesforcedx-vscode-apex.java.home": "/usr/lib/jvm/java-11-openjdk-amd64"
 }
 ```
 
@@ -57,6 +67,8 @@ Inside Visual Studio Code, you will need to set the `salesforcedx-vscode-apex.ja
 
 MacOS:
 
+For Mac OS X 10.5 or later, run `/usr/libexec/java_home` in your Terminal to get the default JDK location. To find all installed JDKs, use `/usr/libexec/java_home -V`.
+
 ```json
 {
   "salesforcedx-vscode-apex.java.home": "/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home"
@@ -73,7 +85,7 @@ Windows:
 
 ## Oracle Java 11 (Officially Test)
 
-1. Navigate to the [download page](https://www.oracle.com/technetwork/java/javase/downloads/index.html)
+1. Navigate to the [download page](https://www.oracle.com/technetwork/java/javase/downloads/jdk11-downloads-5066655.html)
 1. Click the **Download** button for **Java SE 11.x.y (LTS)**
 1. Accept the license agreement
 1. Click the download link that applies to your OS
@@ -85,6 +97,8 @@ Windows:
 Inside Visual Studio Code, you will need to set the `salesforcedx-vscode-apex.java.home` to one of the following values.
 
 MacOS:
+
+For Mac OS X 10.5 or later, run `/usr/libexec/java_home` in your Terminal to get the default JDK location. To find all installed JDKs, use `/usr/libexec/java_home -V`.
 
 ```json
 {
@@ -106,6 +120,8 @@ If you are still running Java 8 the values for `salesforcedx-vscode-apex.java.ho
 
 MacOS:
 
+For Mac OS X 10.5 or later, run `/usr/libexec/java_home` in your Terminal to get the default JDK location. To find all installed JDKs, use `/usr/libexec/java_home -V`.
+
 ```json
 {
   "salesforcedx-vscode-apex.java.home": "/Library/Java/JavaVirtualMachines/jdk1.8.0_131.jdk/Contents/Home"
@@ -117,5 +133,15 @@ Windows:
 ```json
 {
   "salesforcedx-vscode-apex.java.home": "C:\\Program Files\\Java\\jdk1.8.0_131"
+}
+```
+
+## Advanced Setup
+
+By default, a JVM allocates up to one fourth of the system's physical memory to the Apex Language Server process. If you are working on projects with more memory requirements, use the `salesforcedx-vscode-apex.java.memory` setting to override the defaults. Use this setting to specify the maximum size of memory allocation in megabytes and in multiples of 1024.
+
+```json
+{
+  "salesforcedx-vscode-apex.java.memory": 4096
 }
 ```

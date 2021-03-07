@@ -6,69 +6,58 @@
  */
 
 import {
-  Command,
-  SfdxCommandBuilder
-} from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
-import { DirFileNameSelection } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
+  DirFileNameSelection,
+  LocalComponent
+} from '@salesforce/salesforcedx-utils-vscode/src/types';
+import { ApexClassOptions, TemplateType } from '@salesforce/templates';
 import { nls } from '../../messages';
 import {
   CompositeParametersGatherer,
-  FilePathExistsChecker,
-  GlobStrategyFactory,
-  PathStrategyFactory,
+  MetadataTypeGatherer,
   SelectFileName,
   SelectOutputDir,
   SfdxCommandlet,
-  SfdxWorkspaceChecker,
-  SourcePathStrategy
+  SfdxWorkspaceChecker
 } from '../util';
-import { BaseTemplateCommand } from './baseTemplateCommand';
-import {
-  APEX_CLASS_DIRECTORY,
-  APEX_CLASS_EXTENSION
-} from './metadataTypeConstants';
+import { OverwriteComponentPrompt } from '../util/postconditionCheckers';
+import { LibraryBaseTemplateCommand } from './libraryBaseTemplateCommand';
+import { APEX_CLASS_DIRECTORY, APEX_CLASS_TYPE } from './metadataTypeConstants';
 
-export class ForceApexClassCreateExecutor extends BaseTemplateCommand {
-  public build(data: DirFileNameSelection): Command {
-    return new SfdxCommandBuilder()
-      .withDescription(nls.localize('force_apex_class_create_text'))
-      .withArg('force:apex:class:create')
-      .withFlag('--classname', data.fileName)
-      .withFlag('--template', 'DefaultApexClass')
-      .withFlag('--outputdir', data.outputdir)
-      .withLogName('force_apex_class_create')
-      .build();
+export class LibraryForceApexClassCreateExecutor extends LibraryBaseTemplateCommand<
+  DirFileNameSelection
+> {
+  public executionName = nls.localize('force_apex_class_create_text');
+  public telemetryName = 'force_apex_class_create';
+  public metadataTypeName = APEX_CLASS_TYPE;
+  public templateType = TemplateType.ApexClass;
+  public getOutputFileName(data: DirFileNameSelection) {
+    return data.fileName;
   }
-
-  public sourcePathStrategy: SourcePathStrategy = PathStrategyFactory.createDefaultStrategy();
-
-  public getDefaultDirectory() {
-    return APEX_CLASS_DIRECTORY;
-  }
-
-  public getFileExtension() {
-    return APEX_CLASS_EXTENSION;
+  public constructTemplateOptions(data: DirFileNameSelection) {
+    const templateOptions: ApexClassOptions = {
+      template: 'DefaultApexClass',
+      classname: data.fileName,
+      outputdir: data.outputdir
+    };
+    return templateOptions;
   }
 }
 
 const fileNameGatherer = new SelectFileName();
 const outputDirGatherer = new SelectOutputDir(APEX_CLASS_DIRECTORY);
+const metadataTypeGatherer = new MetadataTypeGatherer(APEX_CLASS_TYPE);
 
 export async function forceApexClassCreate() {
+  const createTemplateExecutor = new LibraryForceApexClassCreateExecutor();
   const commandlet = new SfdxCommandlet(
     new SfdxWorkspaceChecker(),
-    new CompositeParametersGatherer<DirFileNameSelection>(
+    new CompositeParametersGatherer<LocalComponent>(
+      metadataTypeGatherer,
       fileNameGatherer,
       outputDirGatherer
     ),
-    new ForceApexClassCreateExecutor(),
-    new FilePathExistsChecker(
-      GlobStrategyFactory.createCheckFileInGivenPath(APEX_CLASS_EXTENSION),
-      nls.localize(
-        'warning_prompt_file_overwrite',
-        nls.localize('apex_class_message_name')
-      )
-    )
+    createTemplateExecutor,
+    new OverwriteComponentPrompt()
   );
   await commandlet.run();
 }

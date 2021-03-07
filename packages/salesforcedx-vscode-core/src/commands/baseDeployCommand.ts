@@ -5,6 +5,7 @@
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
 
+import { TelemetryBuilder } from '@salesforce/salesforcedx-utils-vscode/out/src';
 import {
   CliCommandExecutor,
   ForceDeployResultParser
@@ -14,6 +15,7 @@ import {
   Table
 } from '@salesforce/salesforcedx-utils-vscode/out/src/output';
 import { ContinueResponse } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
+import { ComponentSet } from '@salesforce/source-deploy-retrieve';
 import * as vscode from 'vscode';
 import { channelService } from '../channels';
 import { handleDiagnosticErrors } from '../diagnostics';
@@ -23,6 +25,7 @@ import { DeployQueue } from '../settings/pushOrDeployOnSave';
 import { taskViewService } from '../statuses';
 import { telemetryService } from '../telemetry';
 import { getRootWorkspacePath } from '../util';
+import { createComponentCount } from './util/betaDeployRetrieve';
 import { SfdxCommandletExecutor } from './util/sfdxCommandlet';
 
 export enum DeployType {
@@ -48,9 +51,7 @@ export abstract class BaseDeployExecutor extends SfdxCommandletExecutor<
       cwd: workspacePath,
       env: { SFDX_JSON_TO_STDOUT: 'true' }
     }).execute(cancellationToken);
-
     channelService.streamCommandStartStop(execution);
-    channelService.showChannelOutput();
 
     let stdOut = '';
     execution.stdoutSubject.subscribe(realData => {
@@ -58,22 +59,43 @@ export abstract class BaseDeployExecutor extends SfdxCommandletExecutor<
     });
 
     execution.processExitSubject.subscribe(async exitCode => {
-      this.logMetric(execution.command.logName, startTime);
+      const telemetry = new TelemetryBuilder();
+
       try {
-        const deployParser = new ForceDeployResultParser(stdOut);
-        const errors = deployParser.getErrors();
-        if (errors && !deployParser.hasConflicts()) {
-          handleDiagnosticErrors(
-            errors,
-            workspacePath,
-            execFilePathOrPaths,
-            BaseDeployExecutor.errorCollection
-          );
-        } else {
-          BaseDeployExecutor.errorCollection.clear();
+        const components = new ComponentSet();
+        for (const fsPath of execFilePathOrPaths.split(',')) {
+          components.resolveSourceComponents(fsPath);
         }
-        this.outputResult(deployParser);
+        const metadataCount = JSON.stringify(createComponentCount(components));
+        telemetry.addProperty('metadataCount', metadataCount);
       } catch (e) {
+        telemetryService.sendException(
+          e.name,
+          'error detecting deploy components'
+        );
+      }
+
+      let success = false;
+      try {
+        BaseDeployExecutor.errorCollection.clear();
+        if (stdOut) {
+          const deployParser = new ForceDeployResultParser(stdOut);
+          const errors = deployParser.getErrors();
+          if (errors && !deployParser.hasConflicts()) {
+            channelService.showChannelOutput();
+            handleDiagnosticErrors(
+              errors,
+              workspacePath,
+              execFilePathOrPaths,
+              BaseDeployExecutor.errorCollection
+            );
+          } else {
+            success = true;
+          }
+          this.outputResult(deployParser);
+        }
+      } catch (e) {
+        BaseDeployExecutor.errorCollection.clear();
         if (e.name !== 'DeployParserFail') {
           e.message =
             'Error while creating diagnostics for vscode problem view.';
@@ -81,6 +103,12 @@ export abstract class BaseDeployExecutor extends SfdxCommandletExecutor<
         telemetryService.sendException(e.name, e.message);
         console.error(e.message);
       }
+      telemetry.addProperty('success', String(success));
+      this.logMetric(
+        execution.command.logName,
+        startTime,
+        telemetry.build().properties
+      );
       await DeployQueue.get().unlock();
     });
 

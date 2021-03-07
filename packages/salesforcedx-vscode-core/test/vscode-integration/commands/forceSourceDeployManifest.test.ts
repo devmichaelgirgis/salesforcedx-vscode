@@ -5,12 +5,29 @@
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
 
+import { AuthInfo, Connection } from '@salesforce/core';
+import { MockTestOrgData, testSetup } from '@salesforce/core/lib/testSetup';
+import {
+  ComponentSet,
+  DeployStatus,
+  SourceDeployResult
+} from '@salesforce/source-deploy-retrieve';
 import { expect } from 'chai';
 import * as path from 'path';
+import { createSandbox, SinonStub } from 'sinon';
+import { OUTPUT_CHANNEL } from '../../../src/channels';
 
-import { ForceSourceDeployManifestExecutor } from '../../../src/commands/forceSourceDeployManifest';
+import { ForceSourceDeployManifestExecutor } from '../../../src/commands';
+import { LibrarySourceDeployManifestExecutor } from '../../../src/commands/forceSourceDeployManifest';
+import { createDeployOutput } from '../../../src/commands/util';
+import { workspaceContext } from '../../../src/context';
 
 import { nls } from '../../../src/messages';
+import { SfdxPackageDirectories } from '../../../src/sfdxProject';
+import { getRootWorkspacePath } from '../../../src/util';
+
+const env = createSandbox();
+const $$ = testSetup();
 
 describe('Force Source Deploy Using Manifest Option', () => {
   it('Should build the source deploy command', () => {
@@ -23,5 +40,90 @@ describe('Force Source Deploy Using Manifest Option', () => {
     expect(sourceDeployCommand.description).to.equal(
       nls.localize('force_source_deploy_text')
     );
+  });
+
+  describe('Library Beta', () => {
+    const manifestPath = 'package.xml';
+    const packageDirs = ['p1', 'p2'];
+    const mockComponents = new ComponentSet([
+      { fullName: 'Test', type: 'apexclass' },
+      { fullName: 'Test2', type: 'layout' }
+    ]);
+
+    let mockConnection: Connection;
+    let deployStub: SinonStub;
+    let outputStub: SinonStub;
+
+    const executor = new LibrarySourceDeployManifestExecutor();
+
+    beforeEach(async () => {
+      const testData = new MockTestOrgData();
+      $$.setConfigStubContents('AuthInfoConfig', {
+        contents: await testData.getConfig()
+      });
+      mockConnection = await Connection.create({
+        authInfo: await AuthInfo.create({
+          username: testData.username
+        })
+      });
+
+      env
+        .stub(SfdxPackageDirectories, 'getPackageDirectoryPaths')
+        .resolves(packageDirs);
+      env.stub(workspaceContext, 'getConnection').resolves(mockConnection);
+      env
+        .stub(ComponentSet, 'fromManifestFile')
+        .withArgs(manifestPath, {
+          resolve: packageDirs.map(p => path.join(getRootWorkspacePath(), p))
+        })
+        .returns(mockComponents);
+      deployStub = env.stub(mockComponents, 'deploy').withArgs(mockConnection);
+      outputStub = env.stub(OUTPUT_CHANNEL, 'appendLine');
+    });
+
+    afterEach(() => {
+      env.restore();
+      $$.SANDBOX.restore();
+    });
+
+    it('Should correctly report success', async () => {
+      const deployResult: SourceDeployResult = {
+        id: 'abcd',
+        status: DeployStatus.Succeeded,
+        success: true,
+        components: []
+      };
+      deployStub.resolves(deployResult);
+
+      const success = await executor.run({
+        data: manifestPath,
+        type: 'CONTINUE'
+      });
+
+      expect(success).to.equal(true);
+      expect(
+        outputStub.calledWith(createDeployOutput(deployResult, packageDirs))
+      );
+    });
+
+    it('Should correctly report failure', async () => {
+      const deployResult: SourceDeployResult = {
+        id: 'abcd',
+        status: DeployStatus.Failed,
+        success: true,
+        components: []
+      };
+      deployStub.resolves(deployResult);
+
+      const success = await executor.run({
+        data: manifestPath,
+        type: 'CONTINUE'
+      });
+
+      expect(success).to.equal(false);
+      expect(
+        outputStub.calledWith(createDeployOutput(deployResult, packageDirs))
+      );
+    });
   });
 });

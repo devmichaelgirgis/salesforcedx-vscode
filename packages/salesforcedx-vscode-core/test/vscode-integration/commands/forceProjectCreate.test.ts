@@ -8,17 +8,26 @@
 import { ContinueResponse } from '@salesforce/salesforcedx-utils-vscode/out/src/types';
 import { expect } from 'chai';
 import * as path from 'path';
+import * as shell from 'shelljs';
 import * as sinon from 'sinon';
+import { SinonStub, stub } from 'sinon';
 import * as vscode from 'vscode';
+import * as assert from 'yeoman-assert';
+import { channelService } from '../../../src/channels';
 import {
-  ForceProjectCreateExecutor,
+  forceProjectWithManifestCreate,
+  forceSfdxProjectCreate,
   PathExistsChecker,
   ProjectNameAndPathAndTemplate,
+  projectTemplateEnum,
+  ProjectTemplateItem,
   SelectProjectFolder,
-  SelectProjectName
-} from '../../../src/commands/forceProjectCreate';
-import { projectTemplateEnum } from '../../../src/commands/forceProjectCreate';
+  SelectProjectName,
+  SelectProjectTemplate
+} from '../../../src/commands';
 import { nls } from '../../../src/messages';
+import { notificationService } from '../../../src/notifications';
+import { telemetryService } from '../../../src/telemetry';
 import { getRootWorkspacePath } from '../../../src/util';
 
 // tslint:disable:no-unused-expression
@@ -27,7 +36,7 @@ describe('Force Project Create', () => {
   const WORKSPACE_PATH = path.join(getRootWorkspacePath(), '..');
   const PROJECT_DIR: vscode.Uri[] = [vscode.Uri.parse(WORKSPACE_PATH)];
 
-  /* describe('SelectProjectTemplate Gatherer', () => {
+  describe('SelectProjectTemplate Gatherer', () => {
     let quickPickSpy: sinon.SinonStub;
 
     before(() => {
@@ -38,7 +47,7 @@ describe('Force Project Create', () => {
         .onCall(2)
         .returns(
           new ProjectTemplateItem(
-            projectTemplateEnum.analytics,
+            'force_project_create_analytics_template_display_text',
             'force_project_create_analytics_template'
           )
         );
@@ -74,7 +83,7 @@ describe('Force Project Create', () => {
         expect.fail('Response should be of type ContinueResponse');
       }
     });
-  }); */
+  });
 
   describe('SelectProjectName Gatherer', () => {
     let inputBoxSpy: sinon.SinonStub;
@@ -217,77 +226,331 @@ describe('Force Project Create', () => {
     });
   });
 
-  describe('Project Create Builder', () => {
-    it('Should build the project create command', async () => {
-      const forceProjectCreateBuilder = new ForceProjectCreateExecutor();
-      const createCommand = forceProjectCreateBuilder.build({
-        projectName: PROJECT_NAME,
-        projectUri: PROJECT_DIR[0].fsPath,
-        projectTemplate: projectTemplateEnum.standard
-      });
-      expect(createCommand.toCommand()).to.equal(
-        `sfdx force:project:create --projectname ${PROJECT_NAME} --outputdir ${
-          PROJECT_DIR[0].fsPath
-        } --template standard`
+  describe('Project Create', () => {
+    let showInputBoxStub: SinonStub;
+    let quickPickStub: SinonStub;
+    let openDialogStub: SinonStub;
+    let appendLineStub: SinonStub;
+    let showSuccessfulExecutionStub: SinonStub;
+    let showFailedExecutionStub: SinonStub;
+    let executeCommandStub: SinonStub;
+    let sendCommandEventStub: SinonStub;
+    let showWarningStub: SinonStub;
+
+    beforeEach(() => {
+      showInputBoxStub = stub(vscode.window, 'showInputBox');
+      quickPickStub = stub(vscode.window, 'showQuickPick');
+      openDialogStub = stub(vscode.window, 'showOpenDialog');
+      appendLineStub = stub(channelService, 'appendLine');
+      showSuccessfulExecutionStub = stub(
+        notificationService,
+        'showSuccessfulExecution'
       );
-      expect(createCommand.description).to.equal(
-        nls.localize('force_project_create_text')
+      showSuccessfulExecutionStub.returns(Promise.resolve());
+      showFailedExecutionStub = stub(
+        notificationService,
+        'showFailedExecution'
       );
-    });
-    /*
-    it('Should build the analytics project create command', async () => {
-      const forceProjectCreateBuilder = new ForceProjectCreateExecutor();
-      const createCommand = forceProjectCreateBuilder.build({
-        projectName: PROJECT_NAME,
-        projectUri: PROJECT_DIR[0].fsPath,
-        projectTemplate: projectTemplateEnum.analytics
-      });
-      expect(createCommand.toCommand()).to.equal(
-        `sfdx force:project:create --projectname ${PROJECT_NAME} --outputdir ${
-          PROJECT_DIR[0].fsPath
-        } --template analytics`
-      );
-      expect(createCommand.description).to.equal(
-        nls.localize('force_project_create_text')
-      );
+      executeCommandStub = stub(vscode.commands, 'executeCommand');
+      sendCommandEventStub = stub(telemetryService, 'sendCommandEvent');
+      showWarningStub = stub(vscode.window, 'showWarningMessage');
     });
 
-    it('Should build the analytics project with manifest create command', async () => {
-      const forceProjectCreateBuilder = new ForceProjectCreateExecutor({
-        isProjectWithManifest: true
-      });
-      const createCommand = forceProjectCreateBuilder.build({
-        projectName: PROJECT_NAME,
-        projectUri: PROJECT_DIR[0].fsPath,
-        projectTemplate: projectTemplateEnum.analytics
-      });
-      expect(createCommand.toCommand()).to.equal(
-        `sfdx force:project:create --projectname ${PROJECT_NAME} --outputdir ${
-          PROJECT_DIR[0].fsPath
-        } --template analytics --manifest`
-      );
-      expect(createCommand.description).to.equal(
-        nls.localize('force_project_create_text')
-      );
-    }); */
+    afterEach(() => {
+      showInputBoxStub.restore();
+      quickPickStub.restore();
+      openDialogStub.restore();
+      showSuccessfulExecutionStub.restore();
+      showFailedExecutionStub.restore();
+      appendLineStub.restore();
+      executeCommandStub.restore();
+      sendCommandEventStub.restore();
+      showWarningStub.restore();
+    });
 
-    it('Should build the project with manifest create command', async () => {
-      const forceProjectCreateBuilder = new ForceProjectCreateExecutor({
-        isProjectWithManifest: true
+    it('Should Create Project', async () => {
+      // arrange
+      const projectPath = path.join(getRootWorkspacePath(), 'TestProject');
+      shell.rm('-rf', projectPath);
+      assert.noFile(projectPath);
+
+      quickPickStub.returns({
+        label: nls.localize(
+          'force_project_create_standard_template_display_text'
+        )
       });
-      const createCommand = forceProjectCreateBuilder.build({
-        projectName: PROJECT_NAME,
-        projectUri: PROJECT_DIR[0].fsPath,
-        projectTemplate: projectTemplateEnum.standard
+      showInputBoxStub.returns('TestProject');
+      openDialogStub.returns([
+        vscode.Uri.file(path.join(getRootWorkspacePath()))
+      ]);
+
+      // act
+      await forceSfdxProjectCreate();
+
+      const standardfolderarray = [
+        'aura',
+        'applications',
+        'classes',
+        'contentassets',
+        'flexipages',
+        'layouts',
+        'objects',
+        'permissionsets',
+        'staticresources',
+        'tabs',
+        'triggers'
+      ];
+      const filestocopy = [
+        '.eslintignore',
+        '.forceignore',
+        '.gitignore',
+        '.prettierignore',
+        '.prettierrc',
+        'package.json'
+      ];
+      const vscodearray = ['extensions', 'launch', 'settings'];
+      assert.file([
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject',
+          'config',
+          'project-scratch-def.json'
+        )
+      ]);
+      assert.file([
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject',
+          'scripts',
+          'soql',
+          'account.soql'
+        )
+      ]);
+      assert.file([
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject',
+          'scripts',
+          'apex',
+          'hello.apex'
+        )
+      ]);
+      assert.file([
+        path.join(getRootWorkspacePath(), 'TestProject', 'README.md')
+      ]);
+      assert.file([
+        path.join(getRootWorkspacePath(), 'TestProject', 'sfdx-project.json')
+      ]);
+      assert.fileContent(
+        path.join(getRootWorkspacePath(), 'TestProject', 'sfdx-project.json'),
+        '"namespace": "",'
+      );
+      assert.fileContent(
+        path.join(getRootWorkspacePath(), 'TestProject', 'sfdx-project.json'),
+        '"path": "force-app",'
+      );
+      assert.fileContent(
+        path.join(getRootWorkspacePath(), 'TestProject', 'sfdx-project.json'),
+        'sourceApiVersion'
+      );
+      assert.fileContent(
+        path.join(getRootWorkspacePath(), 'TestProject', 'sfdx-project.json'),
+        '"sfdcLoginUrl": "https://login.salesforce.com"'
+      );
+
+      for (const file of vscodearray) {
+        assert.file([
+          path.join(
+            getRootWorkspacePath(),
+            'TestProject',
+            '.vscode',
+            `${file}.json`
+          )
+        ]);
+      }
+      assert.file([
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject',
+          'force-app',
+          'main',
+          'default',
+          'lwc',
+          '.eslintrc.json'
+        )
+      ]);
+      assert.file([
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject',
+          'force-app',
+          'main',
+          'default',
+          'aura',
+          '.eslintrc.json'
+        )
+      ]);
+      for (const file of filestocopy) {
+        assert.file([path.join(getRootWorkspacePath(), 'TestProject', file)]);
+      }
+      for (const folder of standardfolderarray) {
+        assert.file(
+          path.join(
+            getRootWorkspacePath(),
+            'TestProject',
+            'force-app',
+            'main',
+            'default',
+            folder
+          )
+        );
+      }
+
+      // clean up
+      shell.rm('-rf', projectPath);
+    });
+
+    it('Should Create Project with manifest', async () => {
+      // arrange
+      const projectPath = path.join(getRootWorkspacePath(), 'TestProject');
+      shell.rm('-rf', projectPath);
+      assert.noFile(projectPath);
+
+      quickPickStub.returns({
+        label: nls.localize(
+          'force_project_create_standard_template_display_text'
+        )
       });
-      expect(createCommand.toCommand()).to.equal(
-        `sfdx force:project:create --projectname ${PROJECT_NAME} --outputdir ${
-          PROJECT_DIR[0].fsPath
-        } --template standard --manifest`
+      showInputBoxStub.returns('TestProject');
+      openDialogStub.returns([
+        vscode.Uri.file(path.join(getRootWorkspacePath()))
+      ]);
+
+      // act
+      await forceProjectWithManifestCreate();
+
+      assert.file([
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject',
+          'manifest',
+          'package.xml'
+        )
+      ]);
+
+      // clean up
+      shell.rm('-rf', projectPath);
+    });
+
+    it('Should Create Functions Project', async () => {
+      // arrange
+      const projectPath = path.join(getRootWorkspacePath(), 'TestProject');
+      shell.rm('-rf', projectPath);
+      assert.noFile(projectPath);
+
+      quickPickStub.returns({
+        label: nls.localize(
+          'force_project_create_functions_template_display_text'
+        )
+      });
+      showInputBoxStub.returns('TestProject');
+      openDialogStub.returns([
+        vscode.Uri.file(path.join(getRootWorkspacePath()))
+      ]);
+
+      // act
+      await forceSfdxProjectCreate();
+
+      assert.file([
+        path.join(getRootWorkspacePath(), 'TestProject', 'functions')
+      ]);
+      assert.fileContent(
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject/config/project-scratch-def.json'
+        ),
+        '"Functions"'
       );
-      expect(createCommand.description).to.equal(
-        nls.localize('force_project_create_text')
+
+      // clean up
+      shell.rm('-rf', projectPath);
+    });
+
+    it('Should Create Functions Project with manifest', async () => {
+      // arrange
+      const projectPath = path.join(getRootWorkspacePath(), 'TestProject');
+      shell.rm('-rf', projectPath);
+      assert.noFile(projectPath);
+
+      quickPickStub.returns({
+        label: nls.localize(
+          'force_project_create_functions_template_display_text'
+        )
+      });
+      showInputBoxStub.returns('TestProject');
+      openDialogStub.returns([
+        vscode.Uri.file(path.join(getRootWorkspacePath()))
+      ]);
+
+      // act
+      await forceProjectWithManifestCreate();
+
+      assert.file([
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject',
+          'manifest',
+          'package.xml'
+        )
+      ]);
+      assert.file([
+        path.join(getRootWorkspacePath(), 'TestProject', 'functions')
+      ]);
+      assert.fileContent(
+        path.join(
+          getRootWorkspacePath(),
+          'TestProject/config/project-scratch-def.json'
+        ),
+        '"Functions"'
       );
+
+      // clean up
+      shell.rm('-rf', projectPath);
+    });
+
+    it('Should Log Telemetry on Creating Functions Project', async () => {
+      // arrange
+      const projectPath = path.join(getRootWorkspacePath(), 'TestProject');
+      shell.rm('-rf', projectPath);
+      assert.noFile(projectPath);
+
+      quickPickStub.returns({
+        label: nls.localize(
+          'force_project_create_functions_template_display_text'
+        )
+      });
+      showInputBoxStub.returns('TestProject');
+      openDialogStub.returns([
+        vscode.Uri.file(path.join(getRootWorkspacePath()))
+      ]);
+
+      // act
+      await forceSfdxProjectCreate();
+
+      sinon.assert.calledOnce(sendCommandEventStub);
+      sinon.assert.calledWith(
+        sendCommandEventStub,
+        'force_project_create',
+        sinon.match.array,
+        {
+          dirType: 'customDir',
+          commandExecutor: 'library',
+          projectTemplate: 'functions'
+        }
+      );
+
+      // clean up
+      shell.rm('-rf', projectPath);
     });
   });
 });

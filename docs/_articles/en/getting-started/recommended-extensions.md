@@ -3,7 +3,7 @@ title: Recommended Extensions
 lang: en
 ---
 
-In addition to the extension pack shipped by Salesforce, the following extensions are useful for Salesforce developers.
+In addition to the extension pack shipped by Salesforce, the following extensions are useful for Salesforce developers. We also package the Extension pack with some of the most-used community extensions in the [expanded extension pack](https://marketplace.visualstudio.com/items?itemName=salesforce.salesforcedx-vscode-expanded).
 
 ## Apex PMD
 
@@ -11,13 +11,25 @@ Allows you to run Apex static analysis directly in VS Code on Apex and Visualfor
 
 <https://marketplace.visualstudio.com/items?itemName=chuckjonas.apex-pmd>
 
+## Apex Log Analyzer
+
+An analyzer for Salesforce debug logs aimed at making performance analysis much easier and quicker. You may also find it generally useful for quickly understanding how your code is executing.
+
+<https://marketplace.visualstudio.com/items?itemName=financialforce.lana>
+
 ## Prettier
 
 Keeping your code consistent and nicely formatted is important in any programming language. Prettier supports formatting for many files used by Salesforce developers, such as JavaScript and CSS files.
 
 <https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode>
 
-> NOTE: Unfortunately, Prettier doesn’t support Apex (a member of the community is [working on it](https://github.com/dangmai/prettier-plugin-apex) though).
+> NOTE: Prettier also supports Apex formatting through the [Prettier Apex plugin](https://github.com/dangmai/prettier-plugin-apex).
+
+## ESLint
+
+Analyzes your JavaScript code to find issues and to help you fix them. As a part of the LWC extension, Salesforce provides specific ESLint rules and you can also add your own. These preconfigured rules help you to write high quality code.
+
+<https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint>
 
 ## XML
 
@@ -25,14 +37,6 @@ VS Code doesn’t ship with rich XML tools by default. This extension, built by 
 
 <https://marketplace.visualstudio.com/items?itemName=redhat.vscode-xml>
 
-## GitHub Pull Requests
+## Community Extensions
 
-This extension makes working with GitHub even easier.
-
-<https://marketplace.visualstudio.com/items?itemName=GitHub.vscode-pull-request-github>
-
-## GitLens
-
-Supercharge the Git capabilities built into VS Code: Visualize code authorship at a glance via Git blame annotations and code lenses, navigate and explore Git repositories, gain valuable insights via powerful comparison commands, and more.
-
-<https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens>
+The community has developed several extensions to help make Salesforce development more productive. To find these, search the [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/vscode) or browse all extensions tagged [Salesforce](https://marketplace.visualstudio.com/search?term=tag%3Asalesforce&target=VSCode&category=All%20categories&sortBy=Relevance).

@@ -4,9 +4,7 @@
  * Licensed under the BSD 3-Clause license.
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
-import * as path from 'path';
-import * as vscode from 'vscode';
-
+import { LibraryCommandletExecutor } from '@salesforce/salesforcedx-utils-vscode/out/src';
 import {
   Command,
   SfdxCommandBuilder
@@ -16,16 +14,28 @@ import {
   CancelResponse,
   ContinueResponse
 } from '@salesforce/salesforcedx-utils-vscode/out/src/types/index';
-import { channelService } from '../channels';
+import {
+  ComponentSet,
+  MetadataType,
+  registryData,
+  SourceClient,
+  SourceComponent
+} from '@salesforce/source-deploy-retrieve';
+import * as vscode from 'vscode';
+import { channelService, OUTPUT_CHANNEL } from '../channels';
+import { workspaceContext } from '../context';
 import { nls } from '../messages';
 import { notificationService } from '../notifications';
-import { SfdxPackageDirectories } from '../sfdxProject';
+import { SfdxPackageDirectories, SfdxProjectConfig } from '../sfdxProject';
 import { telemetryService } from '../telemetry';
 import {
+  createComponentCount,
+  createRetrieveOutput,
   FilePathGatherer,
   SfdxCommandlet,
   SfdxCommandletExecutor,
-  SfdxWorkspaceChecker
+  SfdxWorkspaceChecker,
+  useBetaDeployRetrieve
 } from './util';
 
 export class ForceSourceRetrieveSourcePathExecutor extends SfdxCommandletExecutor<
@@ -95,11 +105,83 @@ export async function forceSourceRetrieveSourcePath(explorerPath: vscode.Uri) {
       return;
     }
   }
+
+  const useBeta = useBetaDeployRetrieve([explorerPath]);
+
   const commandlet = new SfdxCommandlet(
     new SfdxWorkspaceChecker(),
     new FilePathGatherer(explorerPath),
-    new ForceSourceRetrieveSourcePathExecutor(),
+    useBeta
+      ? new LibraryRetrieveSourcePathExecutor()
+      : new ForceSourceRetrieveSourcePathExecutor(),
     new SourcePathChecker()
   );
   await commandlet.run();
+}
+
+export class LibraryRetrieveSourcePathExecutor extends LibraryCommandletExecutor<
+  string
+> {
+  constructor() {
+    super(
+      'Retrieve (Beta)',
+      'force_source_retrieve_with_sourcepath_beta',
+      OUTPUT_CHANNEL
+    );
+  }
+
+  public async run(response: ContinueResponse<string>): Promise<boolean> {
+    let retrieve;
+    const connection = await workspaceContext.getConnection();
+    const components = ComponentSet.fromSource(response.data);
+    const first: SourceComponent = components.getSourceComponents().next()
+      .value;
+
+    if (
+      components.size === 1 &&
+      this.isSupportedToolingRetrieveType(first.type)
+    ) {
+      const projectNamespace = (await SfdxProjectConfig.getValue(
+        'namespace'
+      )) as string;
+      const client = new SourceClient(connection);
+      retrieve = client.tooling.retrieve({
+        components,
+        namespace: projectNamespace
+      });
+    } else {
+      retrieve = components.retrieve(
+        connection,
+        (await SfdxPackageDirectories.getDefaultPackageDir()) ?? '',
+        { merge: true }
+      );
+    }
+
+    const metadataCount = JSON.stringify(createComponentCount(components));
+    this.telemetry.addProperty('metadataCount', metadataCount);
+
+    const result = await retrieve;
+
+    channelService.appendLine(
+      createRetrieveOutput(
+        result,
+        await SfdxPackageDirectories.getPackageDirectoryPaths()
+      )
+    );
+
+    return result.success;
+  }
+
+  private isSupportedToolingRetrieveType(type: MetadataType): boolean {
+    const { types } = registryData;
+    const permittedTypeNames = [
+      types.auradefinitionbundle.name,
+      types.lightningcomponentbundle.name,
+      types.apexclass.name,
+      types.apexcomponent.name,
+      types.apexpage.name,
+      types.apextrigger.name
+    ];
+    return permittedTypeNames.includes(type.name);
+  }
 }

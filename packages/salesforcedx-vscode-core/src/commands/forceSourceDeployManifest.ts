@@ -4,17 +4,37 @@
  * Licensed under the BSD 3-Clause license.
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
+import { LibraryCommandletExecutor } from '@salesforce/salesforcedx-utils-vscode/out/src';
 import {
   Command,
   SfdxCommandBuilder
 } from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
+import { ContinueResponse } from '@salesforce/salesforcedx-utils-vscode/src/types';
+import { ComponentSet, DeployStatus } from '@salesforce/source-deploy-retrieve';
+import { join } from 'path';
 import * as vscode from 'vscode';
-import { channelService } from '../channels';
+import { channelService, OUTPUT_CHANNEL } from '../channels';
+import {
+  ConflictDetectionChecker,
+  ConflictDetectionMessages
+} from '../commands/util/postconditionCheckers';
+import { workspaceContext } from '../context';
+import { handleDeployRetrieveLibraryDiagnostics } from '../diagnostics';
 import { nls } from '../messages';
 import { notificationService } from '../notifications';
+import { DeployQueue } from '../settings';
+import { SfdxPackageDirectories } from '../sfdxProject';
 import { telemetryService } from '../telemetry';
+import { getRootWorkspacePath } from '../util';
 import { BaseDeployExecutor, DeployType } from './baseDeployCommand';
-import { FilePathGatherer, SfdxCommandlet, SfdxWorkspaceChecker } from './util';
+import {
+  createComponentCount,
+  FilePathGatherer,
+  SfdxCommandlet,
+  SfdxWorkspaceChecker,
+  useBetaDeployRetrieve
+} from './util';
+import { createDeployOutput } from './util';
 
 export class ForceSourceDeployManifestExecutor extends BaseDeployExecutor {
   public build(manifestPath: string): Command {
@@ -29,6 +49,52 @@ export class ForceSourceDeployManifestExecutor extends BaseDeployExecutor {
 
   protected getDeployType() {
     return DeployType.Deploy;
+  }
+}
+
+export class LibrarySourceDeployManifestExecutor extends LibraryCommandletExecutor<
+  string
+> {
+  constructor() {
+    super(
+      'Deploy With Manifest (beta)',
+      'force_source_deploy_with_manifest',
+      OUTPUT_CHANNEL
+    );
+  }
+
+  public async run(response: ContinueResponse<string>): Promise<boolean> {
+    const packageDirs = await SfdxPackageDirectories.getPackageDirectoryPaths();
+    try {
+      const components = await ComponentSet.fromManifestFile(response.data, {
+        resolve: packageDirs.map(dir => join(getRootWorkspacePath(), dir))
+      });
+      const deployPromise = components.deploy(
+        await workspaceContext.getConnection()
+      );
+      this.telemetry.addProperty(
+        'metadataCount',
+        JSON.stringify(createComponentCount(components))
+      );
+      const result = await deployPromise;
+
+      const outputResult = createDeployOutput(result, packageDirs);
+      channelService.appendLine(outputResult);
+      BaseDeployExecutor.errorCollection.clear();
+
+      if (result.status === DeployStatus.Succeeded) {
+        return true;
+      }
+
+      handleDeployRetrieveLibraryDiagnostics(
+        result,
+        BaseDeployExecutor.errorCollection
+      );
+
+      return false;
+    } finally {
+      await DeployQueue.get().unlock();
+    }
   }
 }
 
@@ -49,10 +115,25 @@ export async function forceSourceDeployManifest(manifestUri: vscode.Uri) {
       return;
     }
   }
+
+  const messages: ConflictDetectionMessages = {
+    warningMessageKey: 'conflict_detect_conflicts_during_deploy',
+    commandHint: input => {
+      return new SfdxCommandBuilder()
+        .withArg('force:source:deploy')
+        .withFlag('--manifest', input)
+        .build()
+        .toString();
+    }
+  };
+
   const commandlet = new SfdxCommandlet(
     new SfdxWorkspaceChecker(),
     new FilePathGatherer(manifestUri),
-    new ForceSourceDeployManifestExecutor()
+    useBetaDeployRetrieve([])
+      ? new LibrarySourceDeployManifestExecutor()
+      : new ForceSourceDeployManifestExecutor(),
+    new ConflictDetectionChecker(messages)
   );
   await commandlet.run();
 }

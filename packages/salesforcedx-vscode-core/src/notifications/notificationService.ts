@@ -8,7 +8,7 @@
 import { CommandExecution } from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
 import { Observable } from 'rxjs/Observable';
 import * as vscode from 'vscode';
-import { DEFAULT_SFDX_CHANNEL } from '../channels';
+import { channelService } from '../channels';
 import { STATUS_BAR_MSG_TIMEOUT_MS } from '../constants';
 import { nls } from '../messages';
 import { sfdxCoreSettings } from '../settings';
@@ -17,16 +17,11 @@ import { sfdxCoreSettings } from '../settings';
  * A centralized location for all notification functionalities.
  */
 export class NotificationService {
-  private readonly channel: vscode.OutputChannel;
   private static instance: NotificationService;
 
-  public constructor(channel?: vscode.OutputChannel) {
-    this.channel = channel || DEFAULT_SFDX_CHANNEL;
-  }
-
-  public static getInstance(channel?: vscode.OutputChannel) {
+  public static getInstance() {
     if (!NotificationService.instance) {
-      NotificationService.instance = new NotificationService(channel);
+      NotificationService.instance = new NotificationService();
     }
     return NotificationService.instance;
   }
@@ -84,13 +79,12 @@ export class NotificationService {
     cancellationToken?: vscode.CancellationToken
   ) {
     observable.subscribe(async data => {
-      if (data !== undefined && data.toString() === '0') {
+      if (data !== undefined && String(data) === '0') {
         await this.showSuccessfulExecution(executionName);
-      } else {
+      } else if (data !== null) {
         this.showFailedExecution(executionName);
       }
     });
-
     if (cancellationToken) {
       cancellationToken.onCancellationRequested(() => {
         this.showCanceledExecution(executionName);
@@ -98,18 +92,18 @@ export class NotificationService {
     }
   }
 
-  private showFailedExecution(executionName: string) {
+  public showFailedExecution(executionName: string) {
     this.showErrorMessage(
       nls.localize('notification_unsuccessful_execution_text', executionName)
     );
-    this.showChannelOutput();
+    channelService.showChannelOutput();
   }
 
   private showCanceledExecution(executionName: string) {
     this.showWarningMessage(
       nls.localize('notification_canceled_execution_text', executionName)
     );
-    this.showChannelOutput();
+    channelService.showChannelOutput();
   }
 
   public async showSuccessfulExecution(executionName: string) {
@@ -128,7 +122,7 @@ export class NotificationService {
         showOnlyStatusBarButtonText
       );
       if (selection && selection === showButtonText) {
-        this.showChannelOutput();
+        channelService.showChannelOutput();
       }
       if (selection && selection === showOnlyStatusBarButtonText) {
         await sfdxCoreSettings.updateShowCLISuccessMsg(false);
@@ -146,11 +140,7 @@ export class NotificationService {
       this.showErrorMessage(
         nls.localize('notification_unsuccessful_execution_text', executionName)
       );
-      this.showChannelOutput();
+      channelService.showChannelOutput();
     });
-  }
-
-  private showChannelOutput() {
-    this.channel.show(true);
   }
 }

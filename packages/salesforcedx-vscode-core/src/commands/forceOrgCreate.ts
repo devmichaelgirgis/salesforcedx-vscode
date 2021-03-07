@@ -13,7 +13,7 @@ import {
   SfdxCommandBuilder
 } from '@salesforce/salesforcedx-utils-vscode/out/src/cli';
 import {
-  isAlphaNumString,
+  isAlphaNumSpaceString,
   isIntegerInRange
 } from '@salesforce/salesforcedx-utils-vscode/out/src/helpers';
 import {
@@ -97,11 +97,13 @@ export class ForceOrgCreateExecutor extends SfdxCommandletExecutor<
           setWorkspaceOrgTypeWithOrgType(OrgType.SourceTracked);
         } else {
           const errorResponse = createParser.getResult() as OrgCreateErrorResult;
-          channelService.appendLine(errorResponse.message);
-          telemetryService.sendException(
-            'force_org_create',
-            errorResponse.message
-          );
+          if (errorResponse) {
+            channelService.appendLine(errorResponse.message);
+            telemetryService.sendException(
+              'force_org_create',
+              errorResponse.message
+            );
+          }
         }
       } catch (err) {
         channelService.appendLine(
@@ -129,16 +131,19 @@ export class AliasGatherer implements ParametersGatherer<Alias> {
     const defaultExpirationdate = DEFAULT_EXPIRATION_DAYS;
     let defaultAlias = DEFAULT_ALIAS;
     if (hasRootWorkspace()) {
-      defaultAlias = getRootWorkspace().name.replace(
+      const folderName = getRootWorkspace().name.replace(
         /\W/g /* Replace all non-alphanumeric characters */,
         ''
       );
+      defaultAlias = isAlphaNumSpaceString(folderName)
+        ? folderName
+        : DEFAULT_ALIAS;
     }
     const aliasInputOptions = {
       prompt: nls.localize('parameter_gatherer_enter_alias_name'),
       placeHolder: defaultAlias,
       validateInput: value => {
-        return isAlphaNumString(value)
+        return isAlphaNumSpaceString(value) || value === ''
           ? null
           : nls.localize('error_invalid_org_alias');
       }
@@ -152,9 +157,9 @@ export class AliasGatherer implements ParametersGatherer<Alias> {
       prompt: nls.localize(
         'parameter_gatherer_enter_scratch_org_expiration_days'
       ),
-      value: defaultExpirationdate,
+      placeHolder: defaultExpirationdate,
       validateInput: value => {
-        return isIntegerInRange(value, [1, 30])
+        return isIntegerInRange(value, [1, 30]) || value === ''
           ? null
           : nls.localize('error_invalid_expiration_days');
       }
@@ -169,7 +174,10 @@ export class AliasGatherer implements ParametersGatherer<Alias> {
       type: 'CONTINUE',
       data: {
         alias: alias === '' ? defaultAlias : alias,
-        expirationDays: scratchOrgExpirationInDays
+        expirationDays:
+          scratchOrgExpirationInDays === ''
+            ? defaultExpirationdate
+            : scratchOrgExpirationInDays
       }
     };
   }
@@ -186,7 +194,11 @@ const preconditionChecker = new CompositePreconditionChecker(
   new DevUsernameChecker()
 );
 const parameterGatherer = new CompositeParametersGatherer(
-  new FileSelector('config/**/*-scratch-def.json'),
+  new FileSelector(
+    nls.localize('parameter_gatherer_enter_scratch_org_def_files'),
+    nls.localize('error_no_scratch_def'),
+    'config/**/*-scratch-def.json'
+  ),
   new AliasGatherer()
 );
 

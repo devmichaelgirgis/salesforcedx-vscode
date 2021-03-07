@@ -5,11 +5,10 @@
  * For full license text, see LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
 
-import { shared as lspCommon } from 'lightning-lsp-common';
-import { WorkspaceType } from 'lightning-lsp-common/lib/shared';
+import { shared as lspCommon } from '@salesforce/lightning-lsp-common';
+import { TelemetryService } from '@salesforce/salesforcedx-utils-vscode/out/src';
 import * as path from 'path';
 import {
-  commands,
   ExtensionContext,
   ProgressLocation,
   Uri,
@@ -22,11 +21,9 @@ import {
   ServerOptions,
   TransportKind
 } from 'vscode-languageclient';
-import { sync as which } from 'which';
-import { createQuickOpenCommand } from './commands/quickpick/quickpick';
 import { nls } from './messages';
-import { telemetryService } from './telemetry';
-import { ComponentTreeProvider } from './views/component-tree-provider';
+
+const EXTENSION_NAME = 'salesforcedx-vscode-lightning';
 
 // See https://github.com/Microsoft/vscode-languageserver-node/issues/105
 export function code2ProtocolConverter(value: Uri): string {
@@ -64,10 +61,14 @@ export async function activate(context: ExtensionContext) {
     return;
   }
 
+  // Pass the workspace folder URIs to the language server
+  const workspaceUris: string[] = [];
+  workspace.workspaceFolders.forEach(folder => {
+    workspaceUris.push(folder.uri.fsPath);
+  });
+
   // 3) If activationMode is autodetect or always, check workspaceType before startup
-  const workspaceType = lspCommon.detectWorkspaceType(
-    workspace.workspaceFolders[0].uri.fsPath
-  );
+  const workspaceType = lspCommon.detectWorkspaceType(workspaceUris);
 
   // Check if we have a valid project structure
   if (getActivationMode() === 'autodetect' && !lspCommon.isLWC(workspaceType)) {
@@ -84,11 +85,26 @@ export async function activate(context: ExtensionContext) {
   console.log('Aura Components Extension Activated');
   console.log('WorkspaceType detected: ' + workspaceType);
 
+  // Initialize telemetry service
+  const extensionPackage = require(context.asAbsolutePath('./package.json'));
+  await TelemetryService.getInstance().initializeService(
+    context,
+    EXTENSION_NAME,
+    extensionPackage.aiKey,
+    extensionPackage.version
+  );
+
   // Start the Aura Language Server
 
   // Setup the language server
   const serverModule = context.asAbsolutePath(
-    path.join('node_modules', 'aura-language-server', 'lib', 'server.js')
+    path.join(
+      'node_modules',
+      '@salesforce',
+      'aura-language-server',
+      'lib',
+      'server.js'
+    )
   );
 
   // The debug options for the server
@@ -159,25 +175,6 @@ export async function activate(context: ExtensionContext) {
     clientOptions
   );
 
-  // Add Quick Open command
-  context.subscriptions.push(
-    commands.registerCommand(
-      'salesforce-lightning-quickopen',
-      createQuickOpenCommand(client)
-    )
-  );
-
-  // Add Lightning Explorer data provider
-  const componentProvider = new ComponentTreeProvider(
-    client,
-    context,
-    workspaceType
-  );
-  window.registerTreeDataProvider(
-    'salesforce-lightning-components',
-    componentProvider
-  );
-
   client
     .onReady()
     .then(() => {
@@ -194,7 +191,7 @@ export async function activate(context: ExtensionContext) {
   context.subscriptions.push(disp);
 
   // Notify telemetry that our extension is now active
-  telemetryService.sendExtensionActivationEvent(extensionHRStart).catch();
+  TelemetryService.getInstance().sendExtensionActivationEvent(extensionHRStart);
 }
 
 let indexingResolve: any;
@@ -225,5 +222,5 @@ function reportIndexing(indexingPromise: Promise<void>) {
 
 export function deactivate() {
   console.log('Aura Components Extension Deactivated');
-  telemetryService.sendExtensionDeactivationEvent().catch();
+  TelemetryService.getInstance().sendExtensionDeactivationEvent();
 }

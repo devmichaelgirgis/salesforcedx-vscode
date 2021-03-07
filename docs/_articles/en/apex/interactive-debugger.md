@@ -18,6 +18,8 @@ To debug subscribers’ sandbox orgs, use [ISV Customer Debugger](./en/apex/isv-
 
 The first time that you use Apex Debugger in VS Code, complete these setup steps.
 
+Note: You can use the default license provided to License Management orgs only with the [ISV Customer Debugger](./en/apex/isv-debugger) to debug subscriber orgs. If you don't have an [Apex Debugger license](https://help.salesforce.com/articleView?id=000314082&type=1&mode=1), use the [Replay Debugger](./en/apex/isv-debugger).
+
 1. Add the `DebugApex` feature to the scratch org definition files for all the types of scratch orgs that you plan to debug:  
    `"features": "DebugApex"`
 1. In VS Code, run **SFDX: Create a Default Scratch Org**.
@@ -76,9 +78,9 @@ To see your exception breakpoints, run **SFDX: Configure Apex Debug Exceptions**
 
 When you close VS Code, all your exception breakpoints are removed. (Your line breakpoints, however, remain.)
 
-## Whitelist Users and Request Types
+## Allowlist Users and Request Types
 
-To filter which requests are debugged, edit your `launch.json` file to set up whitelisting. (The `launch.json` file lives in your project’s `.vscode` directory.) If you don’t use whitelisting, all events in your org trigger debugging during a debugging session. Whitelist users or request types to focus only on the events that are relevant to the problem you’re debugging.
+To filter which requests are debugged, edit your `launch.json` file to set up an allowed users list. (The `launch.json` file lives in your project’s `.vscode` directory.) If you don’t use an allowed users list, all events in your org trigger debugging during a debugging session. Set up allowlist users or request types to focus only on the events that are relevant to the problem you’re debugging.
 
 Add filters to the `"Launch Apex Debugger"` configuration:
 
@@ -98,7 +100,7 @@ Add filters to the `"Launch Apex Debugger"` configuration:
 
 To auto-complete potential request type values for `"requestTypeFilter"`, press Ctrl+Space.
 
-To filter by entry point, enter a regular expression as the value for `"entryPointFilter"`. For example, to whitelist requests made by the Visualforce page `MyPage`, enter `".*/apex/MyPage.apexp"`.
+To filter by entry point, enter a regular expression as the value for `"entryPointFilter"`. For example, to allow requests made by the Visualforce page `MyPage`, enter `".*/apex/MyPage.apexp"`.
 
 ## Considerations
 
